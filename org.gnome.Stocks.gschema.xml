@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<schemalist>
+	<schema path="/org/gnome/stocks/" id="org.gnome.Stocks">
+		<key name='last-symbol' type='s'>
+			<default>"NVDA"</default>
+			<summary>Last active symbol</summary>
+			<description>The symbol of the last active stock.</description>
+		</key>
+		<key name='bookmarks' type='as'>
+			<default>[]</default>
+			<summary>Saved bookmarks</summary>
+			<description>The stocks that have been bookmarked.</description>
+		</key>
+	</schema>
+</schemalist>

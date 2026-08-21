@@ -5,9 +5,9 @@
 
 GSettings *settings_new(void);
 void settings_free(GSettings *g_settings);
-gchar **get_bookmarks(GSettings *settings);
-void append_bookmarks(GSettings *settings, char *bookmark);
-void remove_bookmark(GSettings *settings, guint index);
+gchar **settings_get_bookmarks(GSettings *settings);
+void settings_bookmarks_append(GSettings *settings, char *bookmark);
+void settings_bookmarks_remove(GSettings *settings, guint index);
 void set_last_stock(GSettings *settings, char *stock);
 char *settings_get_active_symbol(GSettings *settings);
 void settings_set_active_symbol(GSettings *settings, char *symbol);

@@ -35,8 +35,10 @@ char *services_yahoo_fetch_data(char *symbol) {
   }
 
   char *url = malloc(sizeof(char) * 128);
-  sprintf(url, "https://query1.finance.yahoo.com/v8/finance/chart/%s?interval=1d&range=1y", symbol);
-  printf("%s\n",symbol);
+  sprintf(url,
+          "https://query1.finance.yahoo.com/v8/finance/chart/"
+          "%s?interval=1d&range=1y",
+          symbol);
   char *ua =
       "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, "
       "like Gecko) Chrome/58.0.3029.110 Safari/537.36";
@@ -46,7 +48,6 @@ char *services_yahoo_fetch_data(char *symbol) {
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
 
   curl_easy_perform(curl);
-  // printf("%s\n",response.data);
 
   return response.data;
 }

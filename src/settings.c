@@ -58,8 +58,11 @@ char *settings_get_active_symbol(GSettings *settings) {
   return g_settings_get_string(settings, "last-symbol");
 }
 
-void settings_set_active_symbol(GSettings *settings,char*symbol) {
-  g_settings_set_string(settings, "last-symbol",symbol);
+void settings_set_active_symbol(GSettings *settings, char *symbol) {
+  g_settings_set_string(settings, "last-symbol", symbol);
   g_settings_sync();
+}
 
+gchar **settings_get_bookmarks(GSettings *settings) {
+  return g_settings_get_strv(settings, "bookmarks");
 }

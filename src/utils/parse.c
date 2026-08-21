@@ -1,7 +1,7 @@
+#include "src/utils/parse.h"
 #include "glib.h"
 #include "src/models/price.h"
 #include "src/models/stock.h"
-#include "src/utils/parse.h"
 #include <cjson/cJSON.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,7 +21,6 @@ Price *utils_parse_prices(char *data, int *prices_length) {
   json = cJSON_GetObjectItemCaseSensitive(json, "quote");
   json = cJSON_GetArrayItem(json, 0);
 
-
   cJSON *json_close = cJSON_GetObjectItemCaseSensitive(json, "close");
   cJSON *json_high = cJSON_GetObjectItemCaseSensitive(json, "high");
   cJSON *json_low = cJSON_GetObjectItemCaseSensitive(json, "low");
@@ -29,7 +28,6 @@ Price *utils_parse_prices(char *data, int *prices_length) {
   cJSON *json_volume = cJSON_GetObjectItemCaseSensitive(json, "volume");
 
   *prices_length = cJSON_GetArraySize(json_close);
-  printf("ye %d\n",*prices_length);
   Price *prices = malloc(sizeof(Price) * *prices_length);
 
   for (int i = 0; i < *prices_length; ++i) {
@@ -77,10 +75,9 @@ gchar *utils_parse_symbol(char *data) {
   return utils_parse_metadata(data, "symbol");
 }
 
-Stock*utils_parse_stock(char *data) {
+Stock *utils_parse_stock(char *data) {
   int prices_length;
   Price *prices = utils_parse_prices(data, &prices_length);
-  printf("%d\n",prices_length);
   gchar *name = utils_parse_name(data);
   gchar *symbol = utils_parse_symbol(data);
 

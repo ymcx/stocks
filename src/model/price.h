@@ -9,7 +9,7 @@ typedef struct {
   double volume;
 } Price;
 
-Price model_price_new(double close, double high, double low, double open,
+Price *model_price_new(double close, double high, double low, double open,
                        double volume);
 
 #endif

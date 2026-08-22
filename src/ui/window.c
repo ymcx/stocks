@@ -149,7 +149,7 @@ AdwNavigationPage *ui_window_create_stock_page(Stock *stock) {
 void ui_window_callback_open_stock_page(GtkButton *_, gpointer user_data) {
   char *symbol = user_data;
 
-  char *data = services_yahoo_fetch_data(symbol);
+  char *data = api_yahoo_get_stock(symbol);
   Stock *stock = utils_parse_stock(data);
 
   AdwNavigationPage *page = ui_window_create_stock_page(stock);

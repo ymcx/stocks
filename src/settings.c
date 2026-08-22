@@ -1,41 +1,72 @@
 #include "src/settings.h"
 #include "gio/gio.h"
-#include "glib-object.h"
-#include <stdio.h>
 
-GSettings *settings_new(void) { return g_settings_new("org.gnome.Stocks"); }
+#define KEY_BOOKMARKS "bookmarks"
 
-void settings_free(GSettings *g_settings) { g_object_unref(g_settings); }
+GSettings *settings_new(const gchar *schema_id) {
+  return g_settings_new(schema_id);
+}
+
+void settings_free(GSettings *settings) { g_object_unref(settings); }
 
 gchar **settings_get_bookmarks(GSettings *settings) {
-  return g_settings_get_strv(settings, "bookmarks");
+  return g_settings_get_strv(settings, KEY_BOOKMARKS);
 }
 
-void settings_bookmarks_append(GSettings *settings, char *bookmark) {
-  gchar **bookmarks = settings_get_bookmarks(settings);
-  guint length = g_strv_length(bookmarks);
-  bookmarks = g_renew(char *, bookmarks, length + 2);
-  bookmarks[length] = g_strdup(bookmark);
-  bookmarks[length + 1] = NULL;
-
-  g_settings_set_strv(settings, "bookmarks", (const gchar *const *)bookmarks);
-}
-
-void settings_bookmarks_remove(GSettings *settings, guint index) {
-  gchar **bookmarks = settings_get_bookmarks(settings);
-  guint length = g_strv_length(bookmarks);
-
-  if (index >= length) {
-    return;
+gboolean settings_set_bookmarks(GSettings *settings, const gchar **bookmarks) {
+  if (!bookmarks) {
+    return FALSE;
   }
 
-  free(bookmarks[index]);
-  bookmarks[index] = NULL;
+  return g_settings_set_strv(settings, KEY_BOOKMARKS, bookmarks);
+}
 
-  for (guint i = length - 2; i >= index; --i) {
+gboolean settings_add_bookmark(GSettings *settings, const gchar *bookmark) {
+  if (!bookmark) {
+    return FALSE;
+  }
+
+  gchar **bookmarks = settings_get_bookmarks(settings);
+  if (!bookmarks) {
+    return FALSE;
+  }
+
+  const guint bookmarks_length = g_strv_length(bookmarks);
+
+  bookmarks = g_realloc(bookmarks, sizeof(gchar *) * (bookmarks_length + 2));
+  bookmarks[bookmarks_length] = g_strdup(bookmark);
+  bookmarks[bookmarks_length + 1] = NULL;
+
+  const gboolean status =
+      settings_set_bookmarks(settings, (const gchar **)bookmarks);
+
+  g_strfreev(bookmarks);
+
+  return status;
+}
+
+gboolean settings_remove_bookmark(GSettings *settings, const guint index) {
+  gchar **bookmarks = settings_get_bookmarks(settings);
+  if (!bookmarks) {
+    return FALSE;
+  }
+
+  const guint bookmarks_length = g_strv_length(bookmarks);
+  if (bookmarks_length <= index) {
+    g_strfreev(bookmarks);
+    return FALSE;
+  }
+
+  g_free(bookmarks[index]);
+  for (guint i = index; i < bookmarks_length - 1; ++i) {
     bookmarks[i] = bookmarks[i + 1];
   }
-  bookmarks[length - 1] = NULL;
+  bookmarks[bookmarks_length - 1] = NULL;
 
-  g_settings_set_strv(settings, "bookmarks", (const gchar *const *)bookmarks);
+  const gboolean status =
+      settings_set_bookmarks(settings, (const gchar **)bookmarks);
+
+  g_strfreev(bookmarks);
+
+  return status;
 }

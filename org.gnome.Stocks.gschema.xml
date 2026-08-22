@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <schemalist>
 	<schema path="/org/gnome/stocks/" id="org.gnome.Stocks">
-		<key name='bookmarks' type='as'>
+		<key name="bookmarks" type="as">
 			<default>[]</default>
 			<summary>Saved bookmarks</summary>
 			<description>The stocks that have been bookmarked.</description>

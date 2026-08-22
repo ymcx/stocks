@@ -1,8 +1,10 @@
-#include "src/services/yahoo.h"
-#include "src/utils/parse.h"
+#include "src/ui/window.h"
+#include "src/api/yahoo.h"
+#include "src/api/yahoo_parser.h"
+#include "src/settings.h"
 #include <adwaita.h>
 
-void window_draw_chart(GtkDrawingArea *_, cairo_t *cr, int width, int height,
+void ui_window_draw_chart(GtkDrawingArea *_, cairo_t *cr, int width, int height,
                        gpointer user_data) {
   Stock *stock = user_data;
   Price *data = stock->prices;
@@ -74,7 +76,7 @@ void window_draw_chart(GtkDrawingArea *_, cairo_t *cr, int width, int height,
 
 AdwNavigationView *navigation_view;
 
-void window_callback_add_stock(GtkButton *_, gpointer user_data) {
+void ui_window_callback_add_stock(GtkButton *_, gpointer user_data) {
   AdwApplicationWindow *window = user_data;
   AdwAlertDialog *dialog = ADW_ALERT_DIALOG(adw_alert_dialog_new(
       "Add stock", "Enter the ticker symbol you want to add."));
@@ -93,7 +95,7 @@ void window_callback_add_stock(GtkButton *_, gpointer user_data) {
   adw_dialog_present(ADW_DIALOG(dialog), GTK_WIDGET(window));
 }
 
-AdwToolbarView *window_create_toolbar(AdwApplicationWindow *window) {
+AdwToolbarView *ui_window_create_toolbar(AdwApplicationWindow *window) {
   GMenu *menu = g_menu_new();
   g_menu_append(menu, "Preferences", "app.preferences");
   g_menu_append(menu, "About", "app.about");
@@ -104,7 +106,7 @@ AdwToolbarView *window_create_toolbar(AdwApplicationWindow *window) {
   if (window) {
     GtkWidget *add_button = gtk_button_new_from_icon_name("list-add-symbolic");
     g_signal_connect(add_button, "clicked",
-                     G_CALLBACK(window_callback_add_stock), window);
+                     G_CALLBACK(ui_window_callback_add_stock), window);
     adw_header_bar_pack_start(main_header, add_button);
   }
 
@@ -125,17 +127,17 @@ AdwToolbarView *window_create_toolbar(AdwApplicationWindow *window) {
   return main_toolbar;
 }
 
-AdwNavigationPage *window_create_stock_page(Stock *stock) {
+AdwNavigationPage *ui_window_create_stock_page(Stock *stock) {
   GtkWidget *content = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
 
   GtkWidget *chart = gtk_drawing_area_new();
   gtk_widget_set_size_request(chart, 600, 600);
-  gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(chart), window_draw_chart,
+  gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(chart), ui_window_draw_chart,
                                  stock, NULL);
 
   gtk_box_append(GTK_BOX(content), chart);
 
-  AdwToolbarView *toolbar = window_create_toolbar(NULL);
+  AdwToolbarView *toolbar = ui_window_create_toolbar(NULL);
   adw_toolbar_view_set_content(toolbar, content);
 
   AdwNavigationPage *page = ADW_NAVIGATION_PAGE(
@@ -144,18 +146,18 @@ AdwNavigationPage *window_create_stock_page(Stock *stock) {
   return page;
 }
 
-void window_callback_open_stock_page(GtkButton *_, gpointer user_data) {
+void ui_window_callback_open_stock_page(GtkButton *_, gpointer user_data) {
   char *symbol = user_data;
 
   char *data = services_yahoo_fetch_data(symbol);
   Stock *stock = utils_parse_stock(data);
 
-  AdwNavigationPage *page = window_create_stock_page(stock);
+  AdwNavigationPage *page = ui_window_create_stock_page(stock);
   adw_navigation_view_push(navigation_view, page);
 }
 
-AdwNavigationPage *window_create_bookmarks_page(gchar **bookmarks,
-                                                AdwApplicationWindow *window) {
+AdwNavigationPage *ui_window_create_bookmarks_page(GSettings*settings, AdwApplicationWindow *window) {
+  gchar**bookmarks=settings_get_bookmarks(settings);
   int bookmarks_length = g_strv_length(bookmarks);
 
   GtkWidget *main_content = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
@@ -169,12 +171,12 @@ AdwNavigationPage *window_create_bookmarks_page(gchar **bookmarks,
     gtk_list_box_append(GTK_LIST_BOX(list), button);
 
     g_signal_connect(button, "clicked",
-                     G_CALLBACK(window_callback_open_stock_page), label);
+                     G_CALLBACK(ui_window_callback_open_stock_page), label);
   }
 
   gtk_box_append(GTK_BOX(main_content), list);
 
-  AdwToolbarView *main_toolbar = window_create_toolbar(window);
+  AdwToolbarView *main_toolbar = ui_window_create_toolbar(window);
 
   adw_toolbar_view_set_content(main_toolbar, main_content);
 
@@ -186,7 +188,7 @@ AdwNavigationPage *window_create_bookmarks_page(gchar **bookmarks,
   return main_page;
 }
 
-void window_activate(GtkApplication *app, gpointer bookmarks) {
+void ui_window_activate(GtkApplication *app, gpointer settings) {
   AdwApplicationWindow *window =
       ADW_APPLICATION_WINDOW(adw_application_window_new(GTK_APPLICATION(app)));
 
@@ -194,8 +196,7 @@ void window_activate(GtkApplication *app, gpointer bookmarks) {
   gtk_window_set_default_size(GTK_WINDOW(window), 700, 700);
 
   navigation_view = ADW_NAVIGATION_VIEW(adw_navigation_view_new());
-  AdwNavigationPage *main_page =
-      window_create_bookmarks_page(bookmarks, window);
+  AdwNavigationPage *main_page = ui_window_create_bookmarks_page(settings, window);
 
   adw_navigation_view_add(navigation_view, main_page);
 

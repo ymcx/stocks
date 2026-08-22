@@ -14,14 +14,16 @@ dependencies = [
 ]
 
 sources = [
+  'src/api/yahoo.c',
+  'src/api/yahoo_parser.c',
   'src/application.c',
   'src/main.c',
-  'src/models/price.c',
-  'src/models/stock.c',
-  'src/services/yahoo.c',
+  'src/model/price.c',
+  'src/model/stock.c',
   'src/settings.c',
-  'src/utils/parse.c',
-  'src/window.c',
+  'src/ui/sidebar.c',
+  'src/ui/stock_view.c',
+  'src/ui/window.c',
 ]
 
 schemas_dir = get_option('prefix') / get_option('datadir') / 'glib-2.0' / 'schemas'

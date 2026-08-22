@@ -3,14 +3,11 @@
 
 #include "gio/gio.h"
 
-GSettings *settings_new(void);
-void settings_free(GSettings *g_settings);
+GSettings *settings_new(const gchar *schema_id);
+void settings_free(GSettings *settings);
 gchar **settings_get_bookmarks(GSettings *settings);
-void settings_bookmarks_append(GSettings *settings, char *bookmark);
-void settings_bookmarks_remove(GSettings *settings, guint index);
-void set_last_stock(GSettings *settings, char *stock);
-char *settings_get_active_symbol(GSettings *settings);
-void settings_set_active_symbol(GSettings *settings, char *symbol);
-gchar **settings_get_bookmarks(GSettings *settings);
+gboolean settings_set_bookmarks(GSettings *settings, const gchar **bookmarks);
+gboolean settings_add_bookmark(GSettings *settings, const gchar *bookmark);
+gboolean settings_remove_bookmark(GSettings *settings, const guint index);
 
 #endif

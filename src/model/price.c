@@ -1,6 +1,6 @@
-#include "src/models/price.h"
+#include "src/model/price.h"
 
-Price models_price_new(double close, double high, double low, double open,
+Price model_price_new(double close, double high, double low, double open,
                        double volume) {
   Price price = {close, high, low, open, volume};
 

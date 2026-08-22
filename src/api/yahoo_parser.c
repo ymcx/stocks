@@ -1,10 +1,9 @@
-#include "src/utils/parse.h"
+#include "src/api/yahoo_parser.h"
 #include "glib.h"
-#include "src/models/price.h"
-#include "src/models/stock.h"
+#include "src/model/price.h"
+#include "src/model/stock.h"
 #include <cjson/cJSON.h>
 #include <stdio.h>
-#include <stdlib.h>
 
 Price *utils_parse_prices(char *data, int *prices_length) {
   cJSON *root = cJSON_Parse(data);
@@ -37,7 +36,7 @@ Price *utils_parse_prices(char *data, int *prices_length) {
     double open = cJSON_GetNumberValue(cJSON_GetArrayItem(json_open, i));
     double volume = cJSON_GetNumberValue(cJSON_GetArrayItem(json_volume, i));
 
-    prices[i] = models_price_new(close, high, low, open, volume);
+    prices[i] = model_price_new(close, high, low, open, volume);
   }
 
   cJSON_Delete(root);
@@ -81,5 +80,5 @@ Stock *utils_parse_stock(char *data) {
   gchar *name = utils_parse_name(data);
   gchar *symbol = utils_parse_symbol(data);
 
-  return models_stock_new(prices, prices_length, name, symbol);
+  return model_stock_new(prices, prices_length, name, symbol);
 }

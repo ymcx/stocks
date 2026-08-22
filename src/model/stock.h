@@ -1,8 +1,8 @@
-#ifndef MODELS_STOCK_H
-#define MODELS_STOCK_H
+#ifndef MODEL_STOCK_H
+#define MODEL_STOCK_H
 
 #include "glib.h"
-#include "src/models/price.h"
+#include "src/model/price.h"
 
 typedef struct {
   Price *prices;
@@ -11,7 +11,7 @@ typedef struct {
   gchar *symbol;
 } Stock;
 
-Stock *models_stock_new(Price *prices, int prices_length, gchar *name,
+Stock *model_stock_new(Price *prices, int prices_length, gchar *name,
                        gchar *symbol) ;
 
 #endif

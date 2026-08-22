@@ -2,24 +2,27 @@
 #include "gtk/gtk.h"
 #include "src/application.h"
 #include "src/settings.h"
-#include <stdlib.h>
 
-int main(int argc,char**argv) {
-  GSettings *g_settings = settings_new();
-  if (!g_settings) {
+#define SCHEMA_ID "org.gnome.Stocks"
+
+int main(int argc, char **argv) {
+  GSettings *settings = settings_new(SCHEMA_ID);
+  if (!settings) {
+    // settings_new shouldn't return NULL unless we're creating the object by
+    // passing a NULL as the schema_id.
     return EXIT_FAILURE;
   }
 
-  GtkApplication *gtk_application = application_new(g_settings);
-  if (!gtk_application) {
-    settings_free(g_settings);
+  GtkApplication *application = application_new(settings);
+  if (!application) {
+    settings_free(settings);
     return EXIT_FAILURE;
   }
 
-  int status = application_run(gtk_application,argc,argv);
+  const int status = application_run(application, argc, argv);
 
-  application_free(gtk_application);
-  settings_free(g_settings);
+  application_free(application);
+  settings_free(settings);
 
   return status;
 }

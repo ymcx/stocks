@@ -14,8 +14,8 @@ dependencies = [
 ]
 
 sources = [
+  'src/api/curl.c',
   'src/api/yahoo.c',
-  'src/api/yahoo_parser.c',
   'src/application.c',
   'src/main.c',
   'src/model/price.c',

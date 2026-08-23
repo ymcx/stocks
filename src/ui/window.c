@@ -1,19 +1,18 @@
 #include "src/ui/window.h"
 #include "src/api/yahoo.h"
-#include "src/api/yahoo_parser.h"
 #include "src/settings.h"
 #include <adwaita.h>
 
 void ui_window_draw_chart(GtkDrawingArea *_, cairo_t *cr, int width, int height,
-                       gpointer user_data) {
+                          gpointer user_data) {
   Stock *stock = user_data;
-  Price *data = stock->prices;
+  Price **data = stock->prices;
   int data_len = stock->prices_length;
 
-  double max = data[0].close;
-  double min = data[0].close;
+  double max = data[0]->close;
+  double min = data[0]->close;
   for (int i = 1; i < data_len; i++) {
-    double close = data[i].close;
+    double close = data[i]->close;
     if (close > max)
       max = close;
     if (close < min)
@@ -45,7 +44,7 @@ void ui_window_draw_chart(GtkDrawingArea *_, cairo_t *cr, int width, int height,
 
   for (int i = 0; i < data_len; i++) {
     double di = i;
-    double close = data[i].close;
+    double close = data[i]->close;
 
     double x = di / (data_len - 1) * chart_width;
 
@@ -61,7 +60,7 @@ void ui_window_draw_chart(GtkDrawingArea *_, cairo_t *cr, int width, int height,
 
   for (int i = 0; i < data_len; i++) {
     double di = i;
-    double close = data[i].close;
+    double close = data[i]->close;
 
     double x = di / (data_len - 1) * chart_width;
 
@@ -149,15 +148,16 @@ AdwNavigationPage *ui_window_create_stock_page(Stock *stock) {
 void ui_window_callback_open_stock_page(GtkButton *_, gpointer user_data) {
   char *symbol = user_data;
 
-  char *data = api_yahoo_get_stock(symbol);
-  Stock *stock = utils_parse_stock(data);
+  Stock *stock = api_yahoo_get_stock(symbol);
 
   AdwNavigationPage *page = ui_window_create_stock_page(stock);
   adw_navigation_view_push(navigation_view, page);
 }
 
-AdwNavigationPage *ui_window_create_bookmarks_page(GSettings*settings, AdwApplicationWindow *window) {
-  gchar**bookmarks=settings_get_bookmarks(settings);
+AdwNavigationPage *
+ui_window_create_bookmarks_page(GSettings *settings,
+                                AdwApplicationWindow *window) {
+  gchar **bookmarks = settings_get_bookmarks(settings);
   int bookmarks_length = g_strv_length(bookmarks);
 
   GtkWidget *main_content = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
@@ -196,7 +196,8 @@ void ui_window_activate(GtkApplication *app, gpointer settings) {
   gtk_window_set_default_size(GTK_WINDOW(window), 700, 700);
 
   navigation_view = ADW_NAVIGATION_VIEW(adw_navigation_view_new());
-  AdwNavigationPage *main_page = ui_window_create_bookmarks_page(settings, window);
+  AdwNavigationPage *main_page =
+      ui_window_create_bookmarks_page(settings, window);
 
   adw_navigation_view_add(navigation_view, main_page);
 

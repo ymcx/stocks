@@ -3,8 +3,15 @@
 	<schema path="/org/gnome/stocks/" id="org.gnome.Stocks">
 		<key name="bookmarks" type="as">
 			<default>[]</default>
-			<summary>Saved bookmarks</summary>
-			<description>The stocks that have been bookmarked.</description>
+		</key>
+		<key name="window-maximized" type="b">
+			<default>false</default>
+		</key>
+		<key name="window-width" type="i">
+			<default>-1</default>
+		</key>
+		<key name="window-height" type="i">
+			<default>-1</default>
 		</key>
 	</schema>
 </schemalist>

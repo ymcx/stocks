@@ -1,13 +1,24 @@
 #include "src/settings.h"
 #include "gio/gio.h"
-
-#define KEY_BOOKMARKS "bookmarks"
+#include "src/literals.h"
 
 GSettings *settings_new(const gchar *schema_id) {
   return g_settings_new(schema_id);
 }
 
 void settings_free(GSettings *settings) { g_object_unref(settings); }
+
+gboolean settings_get_window_maximized(GSettings *settings) {
+  return g_settings_get_boolean(settings, KEY_WINDOW_MAXIMIZED);
+}
+
+gint settings_get_window_height(GSettings *settings) {
+  return g_settings_get_int(settings, KEY_WINDOW_HEIGHT);
+}
+
+gint settings_get_window_width(GSettings *settings) {
+  return g_settings_get_int(settings, KEY_WINDOW_WIDTH);
+}
 
 gchar **settings_get_bookmarks(GSettings *settings) {
   return g_settings_get_strv(settings, KEY_BOOKMARKS);

@@ -1,5 +1,7 @@
 #include "src/ui/window.h"
+#include "gtk/gtk.h"
 #include "src/api/yahoo.h"
+#include "src/literals.h"
 #include "src/settings.h"
 #include <adwaita.h>
 
@@ -44,7 +46,7 @@ void ui_window_draw_chart(GtkDrawingArea *_, cairo_t *cr, int width, int height,
   cairo_set_source_rgb(cr, 0.2, 0.6, 1.0);
   cairo_set_line_width(cr, 3);
 
-  for (int i = 0; i < data_len; i++) {
+  for (size_t i = 0; i < data_len; i++) {
     double di = i;
     double close = data[i]->close;
 
@@ -60,7 +62,7 @@ void ui_window_draw_chart(GtkDrawingArea *_, cairo_t *cr, int width, int height,
 
   cairo_stroke(cr);
 
-  for (int i = 0; i < data_len; i++) {
+  for (size_t i = 0; i < data_len; i++) {
     double di = i;
     double close = data[i]->close;
 
@@ -190,16 +192,32 @@ ui_window_create_bookmarks_page(GSettings *settings,
   return main_page;
 }
 
-void ui_window_activate(GtkApplication *app, gpointer settings) {
+void ui_window_activate(GtkApplication *app, gpointer settingsp) {
   AdwApplicationWindow *window =
       ADW_APPLICATION_WINDOW(adw_application_window_new(GTK_APPLICATION(app)));
 
   gtk_window_set_title(GTK_WINDOW(window), "Stocks");
-  gtk_window_set_default_size(GTK_WINDOW(window), 700, 700);
+
+  GSettings *settings = settingsp;
+  gint width = settings_get_window_width(settings);
+  gint height = settings_get_window_height(settings);
+  gboolean maximized = settings_get_window_maximized(settings);
+
+  gtk_window_set_default_size(GTK_WINDOW(window), width, height);
+  if (maximized) {
+    gtk_window_maximize(GTK_WINDOW(window));
+  }
+
+  g_settings_bind(settingsp, KEY_WINDOW_MAXIMIZED, window, "maximized",
+                  G_SETTINGS_BIND_DEFAULT);
+  g_settings_bind(settingsp, KEY_WINDOW_WIDTH, window, "default-width",
+                  G_SETTINGS_BIND_DEFAULT);
+  g_settings_bind(settingsp, KEY_WINDOW_HEIGHT, window, "default-height",
+                  G_SETTINGS_BIND_DEFAULT);
 
   navigation_view = ADW_NAVIGATION_VIEW(adw_navigation_view_new());
   AdwNavigationPage *main_page =
-      ui_window_create_bookmarks_page(settings, window);
+      ui_window_create_bookmarks_page(settingsp, window);
 
   adw_navigation_view_add(navigation_view, main_page);
 

@@ -1,13 +1,12 @@
 #include "src/application.h"
 #include "gio/gio.h"
 #include "gtk/gtk.h"
+#include "src/literals.h"
 #include "src/ui/window.h"
-
-#define APPLICATION_ID "org.gnome.Stocks"
 
 GtkApplication *application_new(GSettings *settings) {
   GtkApplication *application =
-      gtk_application_new(APPLICATION_ID, G_APPLICATION_DEFAULT_FLAGS);
+      gtk_application_new(ID, G_APPLICATION_DEFAULT_FLAGS);
   if (!application) {
     return NULL;
   }

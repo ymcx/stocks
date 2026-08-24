@@ -87,18 +87,13 @@ char *api_yahoo_get_metadata(const char *data, const char *key) {
   json = cJSON_GetObjectItemCaseSensitive(json, key);
 
   char *value = cJSON_GetStringValue(json);
-
-  cJSON_Delete(json_root);
-
   if (!value) {
+    cJSON_Delete(json_root);
     return NULL;
   }
 
   value = strdup(value);
-  if (!value) {
-    return NULL;
-  }
-
+  cJSON_Delete(json_root);
   return value;
 }
 

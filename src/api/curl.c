@@ -7,7 +7,7 @@
 
 size_t api_curl_write(char *input, size_t size, size_t count, void *output) {
   Response *response = output;
-  if (response == NULL) {
+  if (!response) {
     return 0;
   }
 
@@ -19,7 +19,7 @@ size_t api_curl_write(char *input, size_t size, size_t count, void *output) {
   const size_t length = size * count;
 
   char *data = realloc(response->data, response->size + length + 1);
-  if (data == NULL) {
+  if (!data) {
     return 0;
   }
   response->data = data;
@@ -58,7 +58,7 @@ void api_curl_free(CURL *curl) {
 }
 
 char *api_curl_run(CURL *curl, const char *url) {
-  if (curl == NULL || url == NULL) {
+  if (!curl || !url) {
     return NULL;
   }
 

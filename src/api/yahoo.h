@@ -7,7 +7,7 @@
 #include <curl/curl.h>
 #include <stddef.h>
 
-Price **api_yahoo_get_prices(const char *data, int *prices_length);
+Price **api_yahoo_get_prices(const char *data, size_t *prices_length);
 char *api_yahoo_get_metadata(const char *data, const char *key);
 char *api_yahoo_get_name(const char *data);
 char *api_yahoo_get_symbol(const char *data);

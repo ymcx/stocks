@@ -7,16 +7,18 @@ void ui_window_draw_chart(GtkDrawingArea *_, cairo_t *cr, int width, int height,
                           gpointer user_data) {
   Stock *stock = user_data;
   Price **data = stock->prices;
-  int data_len = stock->prices_length;
+  size_t data_len = stock->prices_length;
 
   double max = data[0]->close;
   double min = data[0]->close;
-  for (int i = 1; i < data_len; i++) {
+  for (size_t i = 1; i < data_len; i++) {
     double close = data[i]->close;
-    if (close > max)
+    if (close > max) {
       max = close;
-    if (close < min)
+    }
+    if (close < min) {
       min = close;
+    }
   }
 
   /* Leave some room around the chart */

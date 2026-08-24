@@ -11,5 +11,6 @@ typedef struct {
 
 Price *model_price_new(double close, double high, double low, double open,
                        double volume);
+void model_price_free(Price *price);
 
 #endif

@@ -1,7 +1,7 @@
 #ifndef SETTINGS_H
 #define SETTINGS_H
 
-#include "gio/gio.h"
+#include <gio/gio.h>
 
 GSettings *settings_new(const gchar *schema_id);
 void settings_free(GSettings *settings);

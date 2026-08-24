@@ -1,8 +1,8 @@
-#include "gio/gio.h"
-#include "gtk/gtk.h"
 #include "src/application.h"
 #include "src/literals.h"
 #include "src/settings.h"
+#include <adwaita.h>
+#include <gio/gio.h>
 
 int main(int argc, char **argv) {
   GSettings *settings = settings_new(ID);
@@ -12,7 +12,7 @@ int main(int argc, char **argv) {
     return EXIT_FAILURE;
   }
 
-  GtkApplication *application = application_new(settings);
+  AdwApplication *application = application_new(settings);
   if (!application) {
     settings_free(settings);
     return EXIT_FAILURE;

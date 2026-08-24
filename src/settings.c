@@ -1,6 +1,6 @@
 #include "src/settings.h"
-#include "gio/gio.h"
 #include "src/literals.h"
+#include <gio/gio.h>
 
 GSettings *settings_new(const gchar *schema_id) {
   return g_settings_new(schema_id);

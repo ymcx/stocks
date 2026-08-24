@@ -1,12 +1,12 @@
 #include "src/application.h"
-#include "gio/gio.h"
-#include "gtk/gtk.h"
 #include "src/literals.h"
 #include "src/ui/window.h"
+#include <adwaita.h>
+#include <gio/gio.h>
 
-GtkApplication *application_new(GSettings *settings) {
-  GtkApplication *application =
-      gtk_application_new(ID, G_APPLICATION_DEFAULT_FLAGS);
+AdwApplication *application_new(GSettings *settings) {
+  AdwApplication *application =
+      adw_application_new(ID, G_APPLICATION_DEFAULT_FLAGS);
   if (!application) {
     return NULL;
   }
@@ -17,10 +17,10 @@ GtkApplication *application_new(GSettings *settings) {
   return application;
 }
 
-void application_free(GtkApplication *application) {
+void application_free(AdwApplication *application) {
   g_object_unref(application);
 }
 
-int application_run(GtkApplication *application, int argc, char **argv) {
+int application_run(AdwApplication *application, int argc, char **argv) {
   return g_application_run(G_APPLICATION(application), argc, argv);
 }

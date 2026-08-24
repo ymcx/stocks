@@ -21,8 +21,8 @@ sources = [
   'src/model/price.c',
   'src/model/stock.c',
   'src/settings.c',
-  'src/ui/sidebar.c',
-  'src/ui/stock_view.c',
+  # 'src/ui/sidebar.c',
+  # 'src/ui/stock_view.c',
   'src/ui/window.c',
 ]
 

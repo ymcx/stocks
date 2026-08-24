@@ -5,7 +5,7 @@
 #include "src/settings.h"
 #include <adwaita.h>
 
-void ui_window_draw_chart(GtkDrawingArea *_, cairo_t *cr, int width, int height,
+void ui_window_draw_chart(GtkDrawingArea *_ G_GNUC_UNUSED, cairo_t *cr, int width, int height,
                           gpointer user_data) {
   Stock *stock = user_data;
   Price **data = stock->prices;
@@ -79,7 +79,7 @@ void ui_window_draw_chart(GtkDrawingArea *_, cairo_t *cr, int width, int height,
 
 AdwNavigationView *navigation_view;
 
-void ui_window_callback_add_stock(GtkButton *_, gpointer user_data) {
+void ui_window_callback_add_stock(GtkButton *_ G_GNUC_UNUSED, gpointer user_data) {
   AdwApplicationWindow *window = user_data;
   AdwAlertDialog *dialog = ADW_ALERT_DIALOG(adw_alert_dialog_new(
       "Add stock", "Enter the ticker symbol you want to add."));
@@ -149,7 +149,7 @@ AdwNavigationPage *ui_window_create_stock_page(Stock *stock) {
   return page;
 }
 
-void ui_window_callback_open_stock_page(GtkButton *_, gpointer user_data) {
+void ui_window_callback_open_stock_page(GtkButton *_ G_GNUC_UNUSED, gpointer user_data) {
   char *symbol = user_data;
 
   Stock *stock = api_yahoo_get_stock(symbol);

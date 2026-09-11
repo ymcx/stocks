@@ -1,6 +1,10 @@
+use std::{fmt, sync::OnceLock};
+
 use reqwest::Client;
 
-#[allow(dead_code)]
+const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Range {
     OneDay,
     FiveDays,
@@ -11,101 +15,169 @@ pub enum Range {
     TwoYears,
     FiveYears,
     TenYears,
-    YTD,
-    MAX,
-}
-
-#[allow(dead_code)]
-pub enum Interval {
-    OneMinute,
-    TwoMinutes,
-    FiveMinutes,
-    FifteenMinutes,
-    ThirtyMinutes,
-    SixtyMinutes,
-    NinetyMinutes,
-    OneHour,
-    OneDay,
-    FiveDays,
-    OneWeek,
-    OneMonth,
-    ThreeMonths,
+    Ytd,
+    Max,
 }
 
 impl Range {
-    fn as_str(&self) -> &'static str {
+    pub const ALL: [Self; 11] = [
+        Self::OneDay,
+        Self::FiveDays,
+        Self::OneMonth,
+        Self::ThreeMonths,
+        Self::SixMonths,
+        Self::OneYear,
+        Self::TwoYears,
+        Self::FiveYears,
+        Self::TenYears,
+        Self::Ytd,
+        Self::Max,
+    ];
+
+    pub const fn as_str(self) -> &'static str {
         match self {
-            Range::OneDay => "1d",
-            Range::FiveDays => "5d",
-            Range::OneMonth => "1mo",
-            Range::ThreeMonths => "3mo",
-            Range::SixMonths => "6mo",
-            Range::OneYear => "1y",
-            Range::TwoYears => "2y",
-            Range::FiveYears => "5y",
-            Range::TenYears => "10y",
-            Range::YTD => "ytd",
-            Range::MAX => "max",
+            Self::OneDay => "1d",
+            Self::FiveDays => "5d",
+            Self::OneMonth => "1mo",
+            Self::ThreeMonths => "3mo",
+            Self::SixMonths => "6mo",
+            Self::OneYear => "1y",
+            Self::TwoYears => "2y",
+            Self::FiveYears => "5y",
+            Self::TenYears => "10y",
+            Self::Ytd => "ytd",
+            Self::Max => "max",
         }
     }
-}
-impl Interval {
-    fn as_str(&self) -> &'static str {
+
+    const fn interval(self) -> &'static str {
         match self {
-            Interval::OneMinute => "1m",
-            Interval::TwoMinutes => "2m",
-            Interval::FiveMinutes => "5m",
-            Interval::FifteenMinutes => "15m",
-            Interval::ThirtyMinutes => "30m",
-            Interval::SixtyMinutes => "60m",
-            Interval::NinetyMinutes => "90m",
-            Interval::OneHour => "1h",
-            Interval::OneDay => "1d",
-            Interval::FiveDays => "5d",
-            Interval::OneWeek => "1wk",
-            Interval::OneMonth => "1mo",
-            Interval::ThreeMonths => "3mo",
+            Self::OneDay => "1m",
+            Self::FiveDays => "15m",
+            Self::OneMonth | Self::ThreeMonths | Self::SixMonths | Self::OneYear | Self::Ytd => {
+                "1d"
+            }
+            Self::TwoYears | Self::FiveYears => "1wk",
+            Self::TenYears | Self::Max => "1mo",
         }
     }
 }
 
-fn parse(text: &str) -> Option<(String, String, String, String, f64, Vec<f64>)> {
-    let json: serde_json::Value = serde_json::from_str(&text).ok()?;
+#[derive(Clone, Debug)]
+pub struct Stock {
+    pub symbol: String,
+    pub long_name: String,
+    pub short_name: String,
+    pub currency: String,
+    pub price: f64,
+    pub open: Vec<f64>,
+}
+
+impl Stock {
+    pub fn name(&self) -> &str {
+        if !self.long_name.is_empty() {
+            &self.long_name
+        } else if !self.short_name.is_empty() {
+            &self.short_name
+        } else {
+            &self.symbol
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum Error {
+    Request(reqwest::Error),
+    Parse,
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Request(error) => write!(f, "request failed: {error}"),
+            Self::Parse => write!(f, "failed to parse the response"),
+        }
+    }
+}
+
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Request(error) => Some(error),
+            Self::Parse => None,
+        }
+    }
+}
+
+impl From<reqwest::Error> for Error {
+    fn from(error: reqwest::Error) -> Self {
+        Self::Request(error)
+    }
+}
+
+fn client() -> &'static Client {
+    static CLIENT: OnceLock<Client> = OnceLock::new();
+    CLIENT.get_or_init(|| {
+        Client::builder()
+            .user_agent(USER_AGENT)
+            .build()
+            .expect("building the HTTP client should succeed")
+    })
+}
+
+fn parse(text: &str) -> Option<Stock> {
+    let json: serde_json::Value = serde_json::from_str(text).ok()?;
     let result = json.get("chart")?.get("result")?.get(0)?;
     let meta = result.get("meta")?;
-    let indicators = result.get("indicators")?;
-    let symbol = meta.get("symbol")?.as_str()?.to_string();
-    let long_name = meta.get("longName")?.as_str()?.to_string();
-    let short_name = meta.get("shortName")?.as_str()?.to_string();
-    let currency = meta.get("currency")?.as_str()?.to_string();
-    let price = meta.get("regularMarketPrice")?.as_f64()?;
-    let open = indicators
+
+    let symbol = meta.get("symbol")?.as_str()?.to_owned();
+    let long_name = meta
+        .get("longName")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default()
+        .to_owned();
+    let short_name = meta
+        .get("shortName")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default()
+        .to_owned();
+    let currency = meta
+        .get("currency")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default()
+        .to_owned();
+    let price = meta
+        .get("regularMarketPrice")
+        .and_then(|value| value.as_f64())
+        .unwrap_or_default();
+    let open = result
+        .get("indicators")?
         .get("quote")?
         .get(0)?
         .get("open")?
         .as_array()?
         .iter()
-        .map(|i| i.as_f64().unwrap())
+        .filter_map(serde_json::Value::as_f64)
         .collect();
 
-    Some((symbol, long_name, short_name, currency, price, open))
+    Some(Stock {
+        symbol,
+        long_name,
+        short_name,
+        currency,
+        price,
+        open,
+    })
 }
 
-pub async fn fetch_stock(
-    symbol: &str,
-    interval: Interval,
-    range: Range,
-) -> Option<(String, String, String, String, f64, Vec<f64>)> {
+pub async fn fetch_stock(symbol: &str, range: Range) -> Result<Stock, Error> {
     let url = format!(
-        "https://query1.finance.yahoo.com/v8/finance/chart/{}?interval={}&range={}",
+        "https://query1.finance.yahoo.com/v8/finance/chart/{}?range={}&interval={}",
         symbol,
-        interval.as_str(),
-        range.as_str()
+        range.as_str(),
+        range.interval()
     );
-    let ua = "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36";
-    let client = Client::builder().user_agent(ua).build().ok()?;
-    let text = client.get(url).send().await.ok()?.text().await.ok()?;
-    let paska = parse(&text);
+    let text = client().get(url).send().await?.text().await?;
 
-    paska
+    parse(&text).ok_or(Error::Parse)
 }

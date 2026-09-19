@@ -1,11 +1,11 @@
 use std::{cell::RefCell, rc::Rc, sync::OnceLock};
 
 use adw::{
-    Application, HeaderBar, NavigationPage, NavigationSplitView, NavigationView, StatusPage,
-    ToolbarView, prelude::*,
+    Application, Breakpoint, BreakpointCondition, HeaderBar, NavigationPage,
+    NavigationSplitView, NavigationView, StatusPage, ToolbarView, prelude::*,
 };
 use gtk::{
-    Box, Button, DrawingArea, Label, Orientation,
+    Box, Button, DrawingArea, Label, Orientation, PolicyType, ScrolledWindow,
     cairo::Context,
     gio::Settings,
     glib::{self, ExitCode},
@@ -45,6 +45,12 @@ fn build_ui(app: &Application) {
     window.set_title(Some(APP_NAME));
 
     let split = NavigationSplitView::new();
+
+    let breakpoint = Breakpoint::new(
+        BreakpointCondition::parse("max-width: 550sp").expect("valid breakpoint condition"),
+    );
+    breakpoint.add_setter(&split, "collapsed", Some(&true.to_value()));
+    window.add_breakpoint(breakpoint);
 
     let sidebar = Box::new(Orientation::Vertical, 12);
 
@@ -102,9 +108,11 @@ fn build_ui(app: &Application) {
 
     glib::spawn_future_local({
         let navigation = navigation.clone();
+        let split = split.clone();
         async move {
             while let Ok(stock) = receiver.recv().await {
-                navigation.push(&create_stock_page(stock));
+                navigation.replace(&[create_stock_page(stock)]);
+                split.set_show_content(true);
             }
         }
     });
@@ -125,6 +133,7 @@ fn create_stock_page(stock: Stock) -> NavigationPage {
     let title = Label::new(None);
     title.set_xalign(0.0);
     title.set_hexpand(true);
+    title.set_ellipsize(gtk::pango::EllipsizeMode::End);
     title.add_css_class("title-3");
 
     let price = Label::new(None);
@@ -183,9 +192,17 @@ fn create_stock_page(stock: Stock) -> NavigationPage {
     });
 
     let content = Box::new(Orientation::Vertical, 0);
+
+    let ranges_scroll = ScrolledWindow::builder()
+        .hscrollbar_policy(PolicyType::External)
+        .vscrollbar_policy(PolicyType::Never)
+        .propagate_natural_height(true)
+        .child(&ranges)
+        .build();
+
     content.append(&header);
     content.append(&chart);
-    content.append(&ranges);
+    content.append(&ranges_scroll);
 
     let stock = state.borrow();
     title.set_label(stock.name());

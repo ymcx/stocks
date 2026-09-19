@@ -15,7 +15,7 @@ pub struct Window {
 impl ObjectSubclass for Window {
     const NAME: &'static str = APP_NAME;
     type Type = super::Window;
-    type ParentType = gtk::ApplicationWindow;
+    type ParentType = adw::ApplicationWindow;
 }
 
 impl ObjectImpl for Window {
@@ -39,3 +39,5 @@ impl WindowImpl for Window {
 }
 
 impl ApplicationWindowImpl for Window {}
+
+impl AdwApplicationWindowImpl for Window {}

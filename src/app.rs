@@ -1,6 +1,9 @@
 use std::{cell::RefCell, rc::Rc, sync::OnceLock};
 
-use adw::{Application, NavigationPage, NavigationSplitView, NavigationView, prelude::*};
+use adw::{
+    Application, HeaderBar, NavigationPage, NavigationSplitView, NavigationView, StatusPage,
+    ToolbarView, prelude::*,
+};
 use gtk::{
     Box, Button, DrawingArea, Label, Orientation,
     cairo::Context,
@@ -51,9 +54,25 @@ fn build_ui(app: &Application) {
         .get()
         .expect("bookmarks should be an array of strings");
 
+    let sidebar_view = ToolbarView::new();
+    sidebar_view.add_top_bar(&HeaderBar::new());
+    sidebar_view.set_content(Some(&sidebar));
+
     let navigation = NavigationView::new();
-    let content_page = NavigationPage::new(&navigation, "content page");
-    let sidebar_page = NavigationPage::new(&sidebar, "sidebar");
+
+    let placeholder = StatusPage::builder()
+        .title(APP_NAME)
+        .description("Select a stock from the sidebar")
+        .icon_name("view-list-symbolic")
+        .build();
+
+    let placeholder_view = ToolbarView::new();
+    placeholder_view.add_top_bar(&HeaderBar::new());
+    placeholder_view.set_content(Some(&placeholder));
+    navigation.add(&NavigationPage::new(&placeholder_view, APP_NAME));
+
+    let sidebar_page = NavigationPage::new(&sidebar_view, "Bookmarks");
+    let content_page = NavigationPage::new(&navigation, APP_NAME);
 
     split.set_sidebar(Some(&sidebar_page));
     split.set_content(Some(&content_page));
@@ -90,7 +109,7 @@ fn build_ui(app: &Application) {
         }
     });
 
-    window.set_child(Some(&split));
+    window.set_content(Some(&split));
     window.present();
 }
 
@@ -172,7 +191,11 @@ fn create_stock_page(stock: Stock) -> NavigationPage {
     title.set_label(stock.name());
     price.set_label(&format_price(stock.price, &stock.currency));
 
-    NavigationPage::new(&content, &stock.symbol)
+    let view = ToolbarView::new();
+    view.add_top_bar(&HeaderBar::new());
+    view.set_content(Some(&content));
+
+    NavigationPage::new(&view, &stock.symbol)
 }
 
 fn draw_chart(area: &DrawingArea, cr: &Context, width: i32, height: i32, open: &[f64]) {

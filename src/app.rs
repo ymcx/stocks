@@ -1,12 +1,12 @@
 use crate::{
     APP_ID, APP_NAME,
     api::{self, Range, Stock},
-    settings::XDSettings,
+    settings::Settings,
     window::Window,
 };
 use adw::{
-    AlertDialog, Application, Breakpoint, BreakpointCondition, HeaderBar, NavigationPage,
-    NavigationSplitView, NavigationView, StatusPage, ToolbarView,
+    AlertDialog, Application, Breakpoint, BreakpointCondition, Dialog, HeaderBar, NavigationPage,
+    NavigationSplitView, NavigationView, ResponseAppearance, StatusPage, ToolbarView,
     gtk::{
         Box, Button, DrawingArea, Entry, Label, MenuButton, Orientation, PolicyType,
         ScrolledWindow,
@@ -18,6 +18,11 @@ use adw::{
     prelude::*,
 };
 use async_channel::Sender;
+use gtk::{
+    GestureClick, PopoverMenu,
+    gdk::Rectangle,
+    gio::{SimpleAction, SimpleActionGroup},
+};
 use std::{cell::RefCell, rc::Rc, sync::OnceLock};
 use tokio::runtime::Runtime;
 
@@ -42,73 +47,116 @@ async fn fetch_into(symbol: String, range: Range, sender: Sender<Stock>) {
         Err(error) => eprintln!("Failed to fetch {symbol}: {error}"),
     }
 }
+fn create_navigation_empty(navigation: NavigationView) -> NavigationPage {
+    let placeholder = StatusPage::builder()
+        .title(APP_NAME)
+        .description("Select a stock from the sidebar")
+        .icon_name("view-list-symbolic")
+        .build();
 
-fn build_ui(app: &Application) {
-    let window = Window::new(app);
-    window.set_title(Some(APP_NAME));
+    let placeholder_view = ToolbarView::new();
+    placeholder_view.add_top_bar(&HeaderBar::new());
+    placeholder_view.set_content(Some(&placeholder));
+    navigation.add(&NavigationPage::new(&placeholder_view, APP_NAME));
 
-    let split = NavigationSplitView::new();
+    let content_page = NavigationPage::new(&navigation, APP_NAME);
+    content_page
+}
 
-    let breakpoint = Breakpoint::new(
-        BreakpointCondition::parse("max-width: 550sp").expect("valid breakpoint condition"),
-    );
-    breakpoint.add_setter(&split, "collapsed", Some(&true.to_value()));
-    window.add_breakpoint(breakpoint);
+fn create_about_dialog() -> Dialog {
+    let boxi = Box::new(Orientation::Vertical, 12);
+    boxi.set_margin_top(24);
+    boxi.set_margin_bottom(24);
+    boxi.set_margin_start(24);
+    boxi.set_margin_end(24);
+    let title = Label::new(Some("lol"));
+    boxi.append(&title);
+    let header = HeaderBar::new();
+    let toolbar = ToolbarView::new();
+    toolbar.add_top_bar(&header);
+    toolbar.set_content(Some(&boxi));
+    let dialog = Dialog::new();
+    dialog.set_child(Some(&toolbar));
 
-    let sidebar = Box::new(Orientation::Vertical, 12);
+    dialog
+}
+fn create_button(
+    sidebar: &Box,
+    bookmark: &str,
+    settings: &Settings,
+    sender: &Sender<Stock>,
+) -> Button {
+    let button = Button::builder()
+        .label(bookmark)
+        .margin_top(12)
+        .margin_bottom(12)
+        .margin_start(12)
+        .margin_end(12)
+        .build();
 
-    let settings = XDSettings::new();
-    let bookmarks: Vec<String> = settings.get_bookmarks();
+    let menu = Menu::new();
+    menu.append(Some("Delete"), Some("button.delete"));
+    let popover = PopoverMenu::from_model(Some(&menu));
+    popover.set_has_arrow(false);
+    popover.set_parent(&button);
+    let gesture = GestureClick::new();
+    gesture.set_button(3);
+    gesture.connect_pressed({
+        let popover = popover.clone();
+        move |_, _, x, y| {
+            popover.set_pointing_to(Some(&Rectangle::new(x as i32, y as i32, 1, 1)));
+            popover.popup();
+        }
+    });
 
+    button.add_controller(gesture);
+
+    let actions = SimpleActionGroup::new();
+    let delete_action = SimpleAction::new("delete", None);
+    actions.add_action(&delete_action);
+    let settings_value = settings.clone();
+    let b = bookmark.to_string();
+    let bb = button.clone();
+    let ss = sidebar.clone();
+    delete_action.connect_activate(move |_, _| {
+        ss.remove(&bb);
+        settings_value.del_bookmarks(&b);
+    });
+    button.insert_action_group("button", Some(&actions));
+
+    let b = bookmark.to_string();
+    button.connect_clicked({
+        let sender = sender.clone();
+        move |_| {
+            let symbol = b.clone();
+            let sender = sender.clone();
+            runtime().spawn(fetch_into(symbol.to_string(), DEFAULT_RANGE, sender));
+        }
+    });
+    button
+}
+fn create_sidebar(
+    window: &Window,
+    sidebar: Box,
+    dialog: AlertDialog,
+    settings: Settings,
+    sender: Sender<Stock>,
+    app: &Application,
+) -> NavigationPage {
     let sidebar_view = ToolbarView::new();
     let header = &HeaderBar::new();
-
     let menu = Menu::new();
     menu.append(Some("About"), Some("app.about"));
 
-    let add_button = Button::builder().icon_name("list-add-symbolic").build();
-    let entry = Entry::builder()
-        .placeholder_text("lol")
-        .hexpand(true)
-        .build();
-    let dialog = AlertDialog::new(Some("header"), Some("body"));
-    dialog.set_extra_child(Some(&entry));
-    dialog.add_response("cancel", "Cancel");
-    dialog.add_response("add", "Add");
-    dialog.set_default_response(Some("add"));
-    dialog.set_close_response("cancel");
-
-    let (sender, receiver) = async_channel::bounded(1);
-
-    let value = dialog.clone();
-    let value_sidebar = sidebar.clone();
-    let value_sender = sender.clone();
-    dialog.connect_response(None, move |_dia, res| {
-        let sender = value_sender.clone();
-        if res == "add" {
-            let bookmark = entry.text().to_uppercase();
-            settings.add_bookmarks(&bookmark);
-            let button = Button::builder()
-                .label(&bookmark)
-                .margin_top(12)
-                .margin_bottom(12)
-                .margin_start(12)
-                .margin_end(12)
-                .build();
-
-            button.connect_clicked({
-                let sender = sender.clone();
-                move |_| {
-                    let symbol = bookmark.clone();
-                    let sender = sender.clone();
-                    runtime().spawn(fetch_into(symbol, DEFAULT_RANGE, sender));
-                }
-            });
-            value_sidebar.append(&button);
-        } else {
-            value.close();
-        }
+    let new_action = SimpleAction::new("about", None);
+    let value = window.clone();
+    new_action.connect_activate(move |_, _| {
+        let di = create_about_dialog();
+        di.present(Some(&value));
     });
+    app.add_action(&new_action);
+
+    let add_button = Button::builder().icon_name("list-add-symbolic").build();
 
     let value = window.clone();
     add_button.connect_clicked(move |_| {
@@ -126,45 +174,107 @@ fn build_ui(app: &Application) {
     sidebar_view.add_top_bar(header);
     sidebar_view.set_content(Some(&sidebar));
 
-    let navigation = NavigationView::new();
-
-    let placeholder = StatusPage::builder()
-        .title(APP_NAME)
-        .description("Select a stock from the sidebar")
-        .icon_name("view-list-symbolic")
-        .build();
-
-    let placeholder_view = ToolbarView::new();
-    placeholder_view.add_top_bar(&HeaderBar::new());
-    placeholder_view.set_content(Some(&placeholder));
-    navigation.add(&NavigationPage::new(&placeholder_view, APP_NAME));
-
     let sidebar_page = NavigationPage::new(&sidebar_view, "Bookmarks");
-    let content_page = NavigationPage::new(&navigation, APP_NAME);
-
-    split.set_sidebar(Some(&sidebar_page));
-    split.set_content(Some(&content_page));
-
+    let bookmarks: Vec<String> = settings.get_bookmarks();
+    // let sender_value=sender.clone();
     for bookmark in bookmarks {
-        let button = Button::builder()
-            .label(&bookmark)
-            .margin_top(12)
-            .margin_bottom(12)
-            .margin_start(12)
-            .margin_end(12)
-            .build();
-
-        button.connect_clicked({
-            let sender = sender.clone();
-            move |_| {
-                let symbol = bookmark.clone();
-                let sender = sender.clone();
-                runtime().spawn(fetch_into(symbol, DEFAULT_RANGE, sender));
-            }
-        });
+        let button = create_button(&sidebar, &bookmark, &settings, &sender);
 
         sidebar.append(&button);
     }
+
+    sidebar_page
+}
+fn add(entry: &Entry, settings: &Settings, value_sender: &Sender<Stock>, value_sidebar: &Box) {
+    let bookmark = entry.text().to_uppercase();
+    settings.add_bookmarks(&bookmark);
+    let button = create_button(value_sidebar, &bookmark, settings, value_sender);
+    value_sidebar.append(&button);
+}
+fn create_dialog(
+    settings: Settings,
+    value_sender: Sender<Stock>,
+    value_sidebar: Box,
+) -> AlertDialog {
+    let entry = Entry::builder()
+        .placeholder_text("lol")
+        .hexpand(true)
+        .build();
+
+    let dialog = AlertDialog::new(Some("header"), Some("body"));
+    dialog.set_extra_child(Some(&entry));
+    dialog.add_response("cancel", "Cancel");
+    dialog.add_response("add", "Add");
+    dialog.set_default_response(Some("add"));
+    dialog.set_response_appearance("add", ResponseAppearance::Suggested);
+    dialog.set_close_response("cancel");
+
+    let value_dialog = dialog.clone();
+    let value_value_sidebar = value_sidebar.clone();
+    let value_value_sender = value_sender.clone();
+    let value_settings = settings.clone();
+    let value_entry = entry.clone();
+    entry.connect_activate({
+        move |_| {
+            add(
+                &value_entry,
+                &value_settings,
+                &value_value_sender,
+                &value_value_sidebar,
+            );
+            value_dialog.close();
+        }
+    });
+    let value_dialog = dialog.clone();
+    let value_value_sidebar = value_sidebar.clone();
+    let value_value_sender = value_sender.clone();
+    let value_settings = settings.clone();
+    let value_entry = entry.clone();
+    dialog.connect_response(None, move |_dia, res| {
+        if res == "add" {
+            add(
+                &value_entry,
+                &value_settings,
+                &value_value_sender,
+                &value_value_sidebar,
+            );
+        } else {
+            value_dialog.close();
+        }
+    });
+    let value_entry = entry.clone();
+    dialog.connect_map(move |_| {
+        value_entry.grab_focus();
+    });
+
+    dialog
+}
+
+fn build_ui(app: &Application) {
+    let window = Window::new(app);
+    window.set_title(Some(APP_NAME));
+
+    let split = NavigationSplitView::new();
+
+    let breakpoint = Breakpoint::new(
+        BreakpointCondition::parse("max-width: 550sp").expect("valid breakpoint condition"),
+    );
+    breakpoint.add_setter(&split, "collapsed", Some(&true.to_value()));
+    window.add_breakpoint(breakpoint);
+
+    let settings = Settings::new();
+
+    let (sender, receiver) = async_channel::bounded(1);
+
+    let side = Box::new(Orientation::Vertical, 12);
+    let navigation = NavigationView::new();
+
+    let dialog = create_dialog(settings.clone(), sender.clone(), side.clone());
+    let sidebar_page = create_sidebar(&window, side, dialog, settings, sender.clone(), app);
+    let navigation_page = create_navigation_empty(navigation.clone());
+
+    split.set_sidebar(Some(&sidebar_page));
+    split.set_content(Some(&navigation_page));
 
     glib::spawn_future_local({
         let navigation = navigation.clone();

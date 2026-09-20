@@ -1,8 +1,12 @@
 use crate::APP_NAME;
-use adw::subclass::prelude::*;
-use gtk::{
-    gio::Settings,
-    glib::{self, Propagation},
+use adw::{
+    ApplicationWindow,
+    gtk::{
+        gio::Settings,
+        glib::{self, Propagation},
+        subclass::prelude::*,
+    },
+    subclass::application_window::AdwApplicationWindowImpl,
 };
 use std::cell::OnceCell;
 
@@ -15,7 +19,7 @@ pub struct Window {
 impl ObjectSubclass for Window {
     const NAME: &'static str = APP_NAME;
     type Type = super::Window;
-    type ParentType = adw::ApplicationWindow;
+    type ParentType = ApplicationWindow;
 }
 
 impl ObjectImpl for Window {

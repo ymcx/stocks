@@ -1,7 +1,8 @@
-use gtk::glib::ExitCode;
+use adw::gtk::glib::ExitCode;
 
 mod api;
 mod app;
+mod settings;
 mod window;
 
 const APP_NAME: &str = "Stocks";

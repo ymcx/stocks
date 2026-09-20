@@ -1,11 +1,16 @@
-mod imp;
-
 use crate::APP_ID;
-use adw::{Application, prelude::*, subclass::prelude::*};
-use gtk::{
-    gio::{self, Settings},
-    glib::{self, BoolError, Object},
+use adw::{
+    Application,
+    gtk::{
+        self,
+        gio::{self, Settings},
+        glib::{self, BoolError, Object},
+    },
+    prelude::*,
+    subclass::prelude::*,
 };
+
+mod imp;
 
 glib::wrapper! {
     pub struct Window(ObjectSubclass<imp::Window>)

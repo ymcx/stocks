@@ -1,6 +1,10 @@
-use std::{fmt, sync::OnceLock};
-
 use reqwest::Client;
+use serde_json::Value;
+use std::{
+    error,
+    fmt::{self, Display, Formatter},
+    sync::OnceLock,
+};
 
 const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36";
 
@@ -91,8 +95,8 @@ pub enum Error {
     Parse,
 }
 
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Display for Error {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Self::Request(error) => write!(f, "request failed: {error}"),
             Self::Parse => write!(f, "failed to parse the response"),
@@ -100,8 +104,8 @@ impl fmt::Display for Error {
     }
 }
 
-impl std::error::Error for Error {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+impl error::Error for Error {
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         match self {
             Self::Request(error) => Some(error),
             Self::Parse => None,
@@ -126,7 +130,7 @@ fn client() -> &'static Client {
 }
 
 fn parse(text: &str) -> Option<Stock> {
-    let json: serde_json::Value = serde_json::from_str(text).ok()?;
+    let json: Value = serde_json::from_str(text).ok()?;
     let result = json.get("chart")?.get("result")?.get(0)?;
     let meta = result.get("meta")?;
 
@@ -157,7 +161,7 @@ fn parse(text: &str) -> Option<Stock> {
         .get("open")?
         .as_array()?
         .iter()
-        .filter_map(serde_json::Value::as_f64)
+        .filter_map(Value::as_f64)
         .collect();
 
     Some(Stock {

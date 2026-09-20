@@ -1,22 +1,25 @@
-use std::{cell::RefCell, rc::Rc, sync::OnceLock};
-
-use adw::{
-    Application, Breakpoint, BreakpointCondition, HeaderBar, NavigationPage,
-    NavigationSplitView, NavigationView, StatusPage, ToolbarView, prelude::*,
-};
-use gtk::{
-    Box, Button, DrawingArea, Label, Orientation, PolicyType, ScrolledWindow,
-    cairo::Context,
-    gio::Settings,
-    glib::{self, ExitCode},
-};
-use tokio::runtime::Runtime;
-
 use crate::{
     APP_ID, APP_NAME,
     api::{self, Range, Stock},
+    settings::XDSettings,
     window::Window,
 };
+use adw::{
+    AlertDialog, Application, Breakpoint, BreakpointCondition, HeaderBar, NavigationPage,
+    NavigationSplitView, NavigationView, StatusPage, ToolbarView,
+    gtk::{
+        Box, Button, DrawingArea, Entry, Label, MenuButton, Orientation, PolicyType,
+        ScrolledWindow,
+        cairo::Context,
+        gio::Menu,
+        glib::{self, ExitCode},
+        pango::EllipsizeMode,
+    },
+    prelude::*,
+};
+use async_channel::Sender;
+use std::{cell::RefCell, rc::Rc, sync::OnceLock};
+use tokio::runtime::Runtime;
 
 const DEFAULT_RANGE: Range = Range::OneMonth;
 
@@ -31,7 +34,7 @@ fn runtime() -> &'static Runtime {
     RUNTIME.get_or_init(|| Runtime::new().expect("setting up the tokio runtime should succeed"))
 }
 
-async fn fetch_into(symbol: String, range: Range, sender: async_channel::Sender<Stock>) {
+async fn fetch_into(symbol: String, range: Range, sender: Sender<Stock>) {
     match api::fetch_stock(&symbol, range).await {
         Ok(stock) => {
             let _ = sender.send(stock).await;
@@ -54,14 +57,73 @@ fn build_ui(app: &Application) {
 
     let sidebar = Box::new(Orientation::Vertical, 12);
 
-    let settings = Settings::new(APP_ID);
-    let bookmarks: Vec<String> = settings
-        .value("bookmarks")
-        .get()
-        .expect("bookmarks should be an array of strings");
+    let settings = XDSettings::new();
+    let bookmarks: Vec<String> = settings.get_bookmarks();
 
     let sidebar_view = ToolbarView::new();
-    sidebar_view.add_top_bar(&HeaderBar::new());
+    let header = &HeaderBar::new();
+
+    let menu = Menu::new();
+    menu.append(Some("About"), Some("app.about"));
+
+    let add_button = Button::builder().icon_name("list-add-symbolic").build();
+    let entry = Entry::builder()
+        .placeholder_text("lol")
+        .hexpand(true)
+        .build();
+    let dialog = AlertDialog::new(Some("header"), Some("body"));
+    dialog.set_extra_child(Some(&entry));
+    dialog.add_response("cancel", "Cancel");
+    dialog.add_response("add", "Add");
+    dialog.set_default_response(Some("add"));
+    dialog.set_close_response("cancel");
+
+    let (sender, receiver) = async_channel::bounded(1);
+
+    let value = dialog.clone();
+    let value_sidebar = sidebar.clone();
+    let value_sender = sender.clone();
+    dialog.connect_response(None, move |_dia, res| {
+        let sender = value_sender.clone();
+        if res == "add" {
+            let bookmark = entry.text().to_uppercase();
+            settings.add_bookmarks(&bookmark);
+            let button = Button::builder()
+                .label(&bookmark)
+                .margin_top(12)
+                .margin_bottom(12)
+                .margin_start(12)
+                .margin_end(12)
+                .build();
+
+            button.connect_clicked({
+                let sender = sender.clone();
+                move |_| {
+                    let symbol = bookmark.clone();
+                    let sender = sender.clone();
+                    runtime().spawn(fetch_into(symbol, DEFAULT_RANGE, sender));
+                }
+            });
+            value_sidebar.append(&button);
+        } else {
+            value.close();
+        }
+    });
+
+    let value = window.clone();
+    add_button.connect_clicked(move |_| {
+        dialog.present(Some(&value));
+    });
+
+    let menu_button = MenuButton::builder()
+        .label("Menu")
+        .icon_name("open-menu-symbolic")
+        .menu_model(&menu)
+        .build();
+    header.pack_start(&add_button);
+    header.pack_end(&menu_button);
+
+    sidebar_view.add_top_bar(header);
     sidebar_view.set_content(Some(&sidebar));
 
     let navigation = NavigationView::new();
@@ -82,8 +144,6 @@ fn build_ui(app: &Application) {
 
     split.set_sidebar(Some(&sidebar_page));
     split.set_content(Some(&content_page));
-
-    let (sender, receiver) = async_channel::bounded(1);
 
     for bookmark in bookmarks {
         let button = Button::builder()
@@ -133,7 +193,7 @@ fn create_stock_page(stock: Stock) -> NavigationPage {
     let title = Label::new(None);
     title.set_xalign(0.0);
     title.set_hexpand(true);
-    title.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    title.set_ellipsize(EllipsizeMode::End);
     title.add_css_class("title-3");
 
     let price = Label::new(None);

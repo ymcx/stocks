@@ -9,7 +9,7 @@ use adw::{
     NavigationPage, NavigationSplitView, NavigationView, ResponseAppearance, StatusPage,
     ToolbarView,
     gtk::{
-        Box, Button, DrawingArea, Entry, Image, Label, ListBox, ListBoxRow, MenuButton,
+        Box, Button, DrawingArea, Entry, Label, ListBox, ListBoxRow, MenuButton,
         Orientation, PolicyType, ScrolledWindow, SelectionMode,
         cairo::Context,
         gio::Menu,
@@ -20,9 +20,7 @@ use adw::{
 };
 use async_channel::Sender;
 use gtk::{
-    GestureClick, PopoverMenu,
-    gdk::Rectangle,
-    gio::{SimpleAction, SimpleActionGroup},
+    GestureClick, PopoverMenu, gdk::Rectangle, gio::{SimpleAction, SimpleActionGroup},
 };
 use std::{cell::RefCell, rc::Rc, sync::OnceLock};
 use tokio::runtime::Runtime;
@@ -265,7 +263,7 @@ fn build_ui(app: &Application) {
     let navigation = NavigationView::new();
 
     let dialog = create_dialog(settings.clone(), side.clone());
-    let sidebar_page = create_sidebar(&window, side, dialog, settings, sender.clone(), app);
+    let sidebar_page = create_sidebar(&window, side.clone(), dialog, settings, sender.clone(), app);
     let navigation_page = create_navigation_empty(navigation.clone());
 
     split.set_sidebar(Some(&sidebar_page));
@@ -284,6 +282,14 @@ fn build_ui(app: &Application) {
 
     window.set_content(Some(&split));
     window.present();
+
+    // The list grabs focus when the window is mapped, which makes GtkListBox
+    // select the first row. Clear it so nothing looks selected until the user
+    // actually picks a bookmark.
+    glib::idle_add_local_once({
+        let side = side.clone();
+        move || side.unselect_all()
+    });
 }
 
 fn create_stock_page(stock: Stock) -> NavigationPage {

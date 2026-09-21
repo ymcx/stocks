@@ -5,11 +5,12 @@ use crate::{
     window::Window,
 };
 use adw::{
-    AlertDialog, Application, Breakpoint, BreakpointCondition, Dialog, HeaderBar, NavigationPage,
-    NavigationSplitView, NavigationView, ResponseAppearance, StatusPage, ToolbarView,
+    AlertDialog, Application, Bin, Breakpoint, BreakpointCondition, Dialog, HeaderBar,
+    NavigationPage, NavigationSplitView, NavigationView, ResponseAppearance, StatusPage,
+    ToolbarView,
     gtk::{
-        Box, Button, DrawingArea, Entry, Label, MenuButton, Orientation, PolicyType,
-        ScrolledWindow,
+        Box, Button, DrawingArea, Entry, Image, Label, ListBox, ListBoxRow, MenuButton,
+        Orientation, PolicyType, ScrolledWindow, SelectionMode,
         cairo::Context,
         gio::Menu,
         glib::{self, ExitCode},
@@ -80,25 +81,23 @@ fn create_about_dialog() -> Dialog {
 
     dialog
 }
-fn create_button(
-    sidebar: &Box,
-    bookmark: &str,
-    settings: &Settings,
-    sender: &Sender<Stock>,
-) -> Button {
-    let button = Button::builder()
-        .label(bookmark)
-        .margin_top(12)
-        .margin_bottom(12)
-        .margin_start(12)
-        .margin_end(12)
-        .build();
+
+fn create_row(sidebar: &ListBox, bookmark: &str, settings: &Settings) -> ListBoxRow {
+    let row = ListBoxRow::builder().activatable(true).build();
+    let row_box = Box::new(Orientation::Horizontal, 12);
+    let label = Label::new(Some(bookmark));
+    label.set_xalign(0.0);
+    label.set_hexpand(true);
+    label.set_ellipsize(EllipsizeMode::End);
+
+    row_box.append(&label);
+    row.set_child(Some(&row_box));
 
     let menu = Menu::new();
-    menu.append(Some("Delete"), Some("button.delete"));
+    menu.append(Some("Delete"), Some("row.delete"));
     let popover = PopoverMenu::from_model(Some(&menu));
     popover.set_has_arrow(false);
-    popover.set_parent(&button);
+    popover.set_parent(&row);
     let gesture = GestureClick::new();
     gesture.set_button(3);
     gesture.connect_pressed({
@@ -109,35 +108,26 @@ fn create_button(
         }
     });
 
-    button.add_controller(gesture);
+    row.add_controller(gesture);
 
     let actions = SimpleActionGroup::new();
     let delete_action = SimpleAction::new("delete", None);
     actions.add_action(&delete_action);
     let settings_value = settings.clone();
     let b = bookmark.to_string();
-    let bb = button.clone();
+    let rr = row.clone();
     let ss = sidebar.clone();
     delete_action.connect_activate(move |_, _| {
-        ss.remove(&bb);
+        ss.remove(&rr);
         settings_value.del_bookmarks(&b);
     });
-    button.insert_action_group("button", Some(&actions));
+    row.insert_action_group("row", Some(&actions));
 
-    let b = bookmark.to_string();
-    button.connect_clicked({
-        let sender = sender.clone();
-        move |_| {
-            let symbol = b.clone();
-            let sender = sender.clone();
-            runtime().spawn(fetch_into(symbol.to_string(), DEFAULT_RANGE, sender));
-        }
-    });
-    button
+    row
 }
 fn create_sidebar(
     window: &Window,
-    sidebar: Box,
+    sidebar: ListBox,
     dialog: AlertDialog,
     settings: Settings,
     sender: Sender<Stock>,
@@ -172,30 +162,43 @@ fn create_sidebar(
     header.pack_end(&menu_button);
 
     sidebar_view.add_top_bar(header);
-    sidebar_view.set_content(Some(&sidebar));
 
-    let sidebar_page = NavigationPage::new(&sidebar_view, "Bookmarks");
-    let bookmarks: Vec<String> = settings.get_bookmarks();
-    // let sender_value=sender.clone();
-    for bookmark in bookmarks {
-        let button = create_button(&sidebar, &bookmark, &settings, &sender);
+    let sidebar_bin = Bin::new();
+    sidebar_bin.set_child(Some(&sidebar));
 
-        sidebar.append(&button);
+    let sidebar_scroll = ScrolledWindow::builder()
+        .hscrollbar_policy(PolicyType::Never)
+        .vscrollbar_policy(PolicyType::Automatic)
+        .child(&sidebar_bin)
+        .build();
+    sidebar_view.set_content(Some(&sidebar_scroll));
+
+    sidebar.connect_row_activated({
+        let sender = sender.clone();
+        let settings = settings.clone();
+        move |_, row| {
+            let bookmarks = settings.get_bookmarks();
+            if let Some(symbol) = bookmarks.get(row.index() as usize) {
+                runtime().spawn(fetch_into(symbol.clone(), DEFAULT_RANGE, sender.clone()));
+            }
+        }
+    });
+
+    for bookmark in settings.get_bookmarks() {
+        let row = create_row(&sidebar, &bookmark, &settings);
+        sidebar.append(&row);
     }
 
+    let sidebar_page = NavigationPage::new(&sidebar_view, "Bookmarks");
     sidebar_page
 }
-fn add(entry: &Entry, settings: &Settings, value_sender: &Sender<Stock>, value_sidebar: &Box) {
+fn add(entry: &Entry, settings: &Settings, value_sidebar: &ListBox) {
     let bookmark = entry.text().to_uppercase();
     settings.add_bookmarks(&bookmark);
-    let button = create_button(value_sidebar, &bookmark, settings, value_sender);
-    value_sidebar.append(&button);
+    let row = create_row(value_sidebar, &bookmark, settings);
+    value_sidebar.append(&row);
 }
-fn create_dialog(
-    settings: Settings,
-    value_sender: Sender<Stock>,
-    value_sidebar: Box,
-) -> AlertDialog {
+fn create_dialog(settings: Settings, value_sidebar: ListBox) -> AlertDialog {
     let entry = Entry::builder()
         .placeholder_text("lol")
         .hexpand(true)
@@ -211,33 +214,21 @@ fn create_dialog(
 
     let value_dialog = dialog.clone();
     let value_value_sidebar = value_sidebar.clone();
-    let value_value_sender = value_sender.clone();
     let value_settings = settings.clone();
     let value_entry = entry.clone();
     entry.connect_activate({
         move |_| {
-            add(
-                &value_entry,
-                &value_settings,
-                &value_value_sender,
-                &value_value_sidebar,
-            );
+            add(&value_entry, &value_settings, &value_value_sidebar);
             value_dialog.close();
         }
     });
     let value_dialog = dialog.clone();
     let value_value_sidebar = value_sidebar.clone();
-    let value_value_sender = value_sender.clone();
     let value_settings = settings.clone();
     let value_entry = entry.clone();
     dialog.connect_response(None, move |_dia, res| {
         if res == "add" {
-            add(
-                &value_entry,
-                &value_settings,
-                &value_value_sender,
-                &value_value_sidebar,
-            );
+            add(&value_entry, &value_settings, &value_value_sidebar);
         } else {
             value_dialog.close();
         }
@@ -266,10 +257,14 @@ fn build_ui(app: &Application) {
 
     let (sender, receiver) = async_channel::bounded(1);
 
-    let side = Box::new(Orientation::Vertical, 12);
+    let side = ListBox::new();
+    side.add_css_class("navigation-sidebar");
+    side.set_selection_mode(SelectionMode::Single);
+    side.set_activate_on_single_click(true);
+
     let navigation = NavigationView::new();
 
-    let dialog = create_dialog(settings.clone(), sender.clone(), side.clone());
+    let dialog = create_dialog(settings.clone(), side.clone());
     let sidebar_page = create_sidebar(&window, side, dialog, settings, sender.clone(), app);
     let navigation_page = create_navigation_empty(navigation.clone());
 

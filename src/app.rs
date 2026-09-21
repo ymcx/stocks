@@ -5,12 +5,11 @@ use crate::{
     window::Window,
 };
 use adw::{
-    AlertDialog, Application, Bin, Breakpoint, BreakpointCondition, Dialog, HeaderBar,
-    NavigationPage, NavigationSplitView, NavigationView, ResponseAppearance, StatusPage,
-    ToolbarView,
+    Application, Bin, Breakpoint, BreakpointCondition, Dialog, HeaderBar, NavigationPage,
+    NavigationSplitView, NavigationView, StatusPage, ToolbarView,
     gtk::{
-        Box, Button, DrawingArea, Entry, Label, ListBox, ListBoxRow, MenuButton,
-        Orientation, PolicyType, ScrolledWindow, SelectionMode,
+        Box, Button, DrawingArea, Entry, Label, ListBox, ListBoxRow, MenuButton, Orientation,
+        PolicyType, ScrolledWindow, SelectionMode,
         cairo::Context,
         gio::Menu,
         glib::{self, ExitCode},
@@ -20,7 +19,9 @@ use adw::{
 };
 use async_channel::Sender;
 use gtk::{
-    GestureClick, PopoverMenu, gdk::Rectangle, gio::{SimpleAction, SimpleActionGroup},
+    GestureClick, PopoverMenu,
+    gdk::Rectangle,
+    gio::{SimpleAction, SimpleActionGroup},
 };
 use std::{cell::RefCell, rc::Rc, sync::OnceLock};
 use tokio::runtime::Runtime;
@@ -126,7 +127,7 @@ fn create_row(sidebar: &ListBox, bookmark: &str, settings: &Settings) -> ListBox
 fn create_sidebar(
     window: &Window,
     sidebar: ListBox,
-    dialog: AlertDialog,
+    dialog: Dialog,
     settings: Settings,
     sender: Sender<Stock>,
     app: &Application,
@@ -190,50 +191,80 @@ fn create_sidebar(
     let sidebar_page = NavigationPage::new(&sidebar_view, "Bookmarks");
     sidebar_page
 }
-fn add(entry: &Entry, settings: &Settings, value_sidebar: &ListBox) {
+fn addf(entry: &Entry, settings: &Settings, value_sidebar: &ListBox) {
     let bookmark = entry.text().to_uppercase();
     settings.add_bookmarks(&bookmark);
     let row = create_row(value_sidebar, &bookmark, settings);
     value_sidebar.append(&row);
 }
-fn create_dialog(settings: Settings, value_sidebar: ListBox) -> AlertDialog {
+fn create_dialog(settings: Settings, value_sidebar: ListBox) -> Dialog {
     let entry = Entry::builder()
-        .placeholder_text("lol")
+        .placeholder_text("Stock symbol")
         .hexpand(true)
+        .activates_default(true)
         .build();
 
-    let dialog = AlertDialog::new(Some("header"), Some("body"));
-    dialog.set_extra_child(Some(&entry));
-    dialog.add_response("cancel", "Cancel");
-    dialog.add_response("add", "Add");
-    dialog.set_default_response(Some("add"));
-    dialog.set_response_appearance("add", ResponseAppearance::Suggested);
-    dialog.set_close_response("cancel");
+    let content = Box::new(Orientation::Vertical, 0);
+    content.set_margin_top(24);
+    content.set_margin_bottom(24);
+    content.set_margin_start(24);
+    content.set_margin_end(24);
+    content.append(&entry);
 
-    let value_dialog = dialog.clone();
-    let value_value_sidebar = value_sidebar.clone();
-    let value_settings = settings.clone();
-    let value_entry = entry.clone();
-    entry.connect_activate({
+    let header = HeaderBar::builder()
+        .show_start_title_buttons(false)
+        .show_end_title_buttons(false)
+        .build();
+
+    let cancel = Button::builder()
+        .label("_Cancel")
+        .use_underline(true)
+        .valign(gtk::Align::Center)
+        .build();
+    let add_button = Button::builder()
+        .label("_Add")
+        .use_underline(true)
+        .valign(gtk::Align::Center)
+        .css_classes(["suggested-action"])
+        .build();
+
+    header.pack_start(&cancel);
+    header.pack_end(&add_button);
+
+    let toolbar = ToolbarView::new();
+    toolbar.add_top_bar(&header);
+    toolbar.set_content(Some(&content));
+
+    let dialog = Dialog::builder()
+        .title("Add Bookmark")
+        .content_width(420)
+        .default_widget(&add_button)
+        .child(&toolbar)
+        .build();
+
+    cancel.connect_clicked({
+        let dialog = dialog.clone();
         move |_| {
-            add(&value_entry, &value_settings, &value_value_sidebar);
-            value_dialog.close();
+            dialog.close();
         }
     });
-    let value_dialog = dialog.clone();
-    let value_value_sidebar = value_sidebar.clone();
-    let value_settings = settings.clone();
-    let value_entry = entry.clone();
-    dialog.connect_response(None, move |_dia, res| {
-        if res == "add" {
-            add(&value_entry, &value_settings, &value_value_sidebar);
-        } else {
-            value_dialog.close();
+
+    add_button.connect_clicked({
+        let dialog = dialog.clone();
+        let settings = settings.clone();
+        let sidebar = value_sidebar.clone();
+        let entry = entry.clone();
+        move |_| {
+            addf(&entry, &settings, &sidebar);
+            dialog.close();
         }
     });
-    let value_entry = entry.clone();
-    dialog.connect_map(move |_| {
-        value_entry.grab_focus();
+
+    dialog.connect_map({
+        let entry = entry.clone();
+        move |_| {
+            entry.grab_focus();
+        }
     });
 
     dialog
@@ -283,9 +314,6 @@ fn build_ui(app: &Application) {
     window.set_content(Some(&split));
     window.present();
 
-    // The list grabs focus when the window is mapped, which makes GtkListBox
-    // select the first row. Clear it so nothing looks selected until the user
-    // actually picks a bookmark.
     glib::idle_add_local_once({
         let side = side.clone();
         move || side.unselect_all()

@@ -1,13 +1,16 @@
 use adw::gtk::glib::ExitCode;
+use gtk::gio;
 
 mod api;
 mod app;
 mod settings;
 mod window;
 
+const APP_VERSION: &str = "1.0";
 const APP_NAME: &str = "Stocks";
 const APP_ID: &str = "com.ymcx.Stocks";
 
 fn main() -> ExitCode {
+    gio::resources_register_include!("compiled.gresource").unwrap();
     app::run()
 }

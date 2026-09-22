@@ -1,12 +1,12 @@
 use crate::{
-    APP_ID, APP_NAME,
+    APP_ID, APP_NAME, APP_VERSION,
     api::{self, Range, Stock},
     settings::Settings,
     window::Window,
 };
 use adw::{
-    Application, Bin, Breakpoint, BreakpointCondition, Dialog, HeaderBar, NavigationPage,
-    NavigationSplitView, NavigationView, StatusPage, ToolbarView,
+    AboutDialog, Application, Bin, Breakpoint, BreakpointCondition, Dialog, HeaderBar,
+    NavigationPage, NavigationSplitView, NavigationView, StatusPage, ToolbarView,
     gtk::{
         Box, Button, DrawingArea, Entry, Label, ListBox, ListBoxRow, MenuButton, Orientation,
         PolicyType, ScrolledWindow, SelectionMode,
@@ -63,22 +63,17 @@ fn create_navigation_empty(navigation: NavigationView) -> NavigationPage {
     content_page
 }
 
-fn create_about_dialog() -> Dialog {
-    let boxi = Box::new(Orientation::Vertical, 12);
-    boxi.set_margin_top(24);
-    boxi.set_margin_bottom(24);
-    boxi.set_margin_start(24);
-    boxi.set_margin_end(24);
-    let title = Label::new(Some("lol"));
-    boxi.append(&title);
-    let header = HeaderBar::new();
-    let toolbar = ToolbarView::new();
-    toolbar.add_top_bar(&header);
-    toolbar.set_content(Some(&boxi));
-    let dialog = Dialog::new();
-    dialog.set_child(Some(&toolbar));
-
-    dialog
+fn create_about_dialog() -> AboutDialog {
+    let dial = adw::AboutDialog::builder()
+        .application_icon(APP_ID)
+        .application_name(APP_NAME)
+        .developer_name("ymcx")
+        .issue_url("https://github.com/ymcx/stocks/issues")
+        .license_type(gtk::License::MitX11)
+        .version(APP_VERSION)
+        .website("https://github.com/ymcx/stocks/issues")
+        .build();
+    dial
 }
 
 fn create_row(sidebar: &ListBox, bookmark: &str, settings: &Settings) -> ListBoxRow {

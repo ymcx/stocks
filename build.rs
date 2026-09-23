@@ -11,7 +11,7 @@ fn main() {
     // glib-build-tools has no schema helper, so compile the schemas ourselves.
     compile_schemas(Path::new("data"));
 
-    println!("cargo:rerun-if-changed=data/icon.png");
+    println!("cargo:rerun-if-changed=data/icon.svg");
     println!("cargo:rerun-if-changed=data/com.ymcx.Stocks.gschema.xml");
     // Track the generated file too, so deleting it forces a rerun.
     println!("cargo:rerun-if-changed=data/gschemas.compiled");

@@ -23,7 +23,11 @@ use gtk::{
     gdk::Rectangle,
     gio::{SimpleAction, SimpleActionGroup},
 };
-use std::{cell::RefCell, rc::Rc, sync::OnceLock};
+use std::{
+    cell::{Cell, RefCell},
+    rc::Rc,
+    sync::OnceLock,
+};
 use tokio::runtime::Runtime;
 
 const DEFAULT_RANGE: Range = Range::OneMonth;
@@ -186,10 +190,9 @@ fn create_sidebar(
     let sidebar_page = NavigationPage::new(&sidebar_view, "Bookmarks");
     sidebar_page
 }
-fn addf(entry: &Entry, settings: &Settings, value_sidebar: &ListBox) {
-    let bookmark = entry.text().to_uppercase();
-    settings.add_bookmarks(&bookmark);
-    let row = create_row(value_sidebar, &bookmark, settings);
+fn addf(symbol: &str, settings: &Settings, value_sidebar: &ListBox) {
+    settings.add_bookmarks(symbol);
+    let row = create_row(value_sidebar, symbol, settings);
     value_sidebar.append(&row);
 }
 fn create_dialog(settings: Settings, value_sidebar: ListBox) -> Dialog {
@@ -199,12 +202,20 @@ fn create_dialog(settings: Settings, value_sidebar: ListBox) -> Dialog {
         .activates_default(true)
         .build();
 
-    let content = Box::new(Orientation::Vertical, 0);
+    let error_label = Label::builder()
+        .label("No stock found with that symbol")
+        .xalign(0.0)
+        .visible(false)
+        .css_classes(["error"])
+        .build();
+
+    let content = Box::new(Orientation::Vertical, 6);
     content.set_margin_top(24);
     content.set_margin_bottom(24);
     content.set_margin_start(24);
     content.set_margin_end(24);
     content.append(&entry);
+    content.append(&error_label);
 
     let header = HeaderBar::builder()
         .show_start_title_buttons(false)
@@ -237,10 +248,28 @@ fn create_dialog(settings: Settings, value_sidebar: ListBox) -> Dialog {
         .child(&toolbar)
         .build();
 
+    let generation = Rc::new(Cell::new(0_u64));
+
     cancel.connect_clicked({
         let dialog = dialog.clone();
         move |_| {
             dialog.close();
+        }
+    });
+
+    dialog.connect_closed({
+        let generation = generation.clone();
+        move |_| {
+            generation.set(generation.get() + 1);
+        }
+    });
+
+    entry.connect_changed({
+        let entry = entry.clone();
+        let error_label = error_label.clone();
+        move |_| {
+            entry.remove_css_class("error");
+            error_label.set_visible(false);
         }
     });
 
@@ -249,15 +278,71 @@ fn create_dialog(settings: Settings, value_sidebar: ListBox) -> Dialog {
         let settings = settings.clone();
         let sidebar = value_sidebar.clone();
         let entry = entry.clone();
+        let error_label = error_label.clone();
+        let add_button = add_button.clone();
+        let generation = generation.clone();
         move |_| {
-            addf(&entry, &settings, &sidebar);
-            dialog.close();
+            let symbol = entry.text().trim().to_uppercase();
+
+            if symbol.is_empty() {
+                entry.add_css_class("error");
+                error_label.set_visible(true);
+                entry.grab_focus();
+                return;
+            }
+
+            entry.set_sensitive(false);
+            add_button.set_sensitive(false);
+
+            let (sender, receiver) = async_channel::bounded(1);
+            let check = symbol.clone();
+            runtime().spawn(async move {
+                let _ = sender.send(api::valid(&check).await).await;
+            });
+
+            glib::spawn_future_local({
+                let dialog = dialog.clone();
+                let settings = settings.clone();
+                let sidebar = sidebar.clone();
+                let entry = entry.clone();
+                let error_label = error_label.clone();
+                let add_button = add_button.clone();
+                let generation = generation.clone();
+                let current = generation.get();
+                async move {
+                    let valid = receiver.recv().await.unwrap_or(false);
+
+                    entry.set_sensitive(true);
+                    add_button.set_sensitive(true);
+
+                    if generation.get() != current {
+                        return;
+                    }
+
+                    if valid {
+                        addf(&symbol, &settings, &sidebar);
+                        dialog.close();
+                    } else {
+                        entry.add_css_class("error");
+                        error_label.set_visible(true);
+                        entry.grab_focus();
+                    }
+                }
+            });
         }
     });
 
     dialog.connect_map({
         let entry = entry.clone();
+        let error_label = error_label.clone();
+        let add_button = add_button.clone();
+        let generation = generation.clone();
         move |_| {
+            generation.set(generation.get() + 1);
+            entry.set_sensitive(true);
+            add_button.set_sensitive(true);
+            entry.remove_css_class("error");
+            error_label.set_visible(false);
             entry.grab_focus();
         }
     });

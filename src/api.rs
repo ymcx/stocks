@@ -185,3 +185,7 @@ pub async fn fetch_stock(symbol: &str, range: Range) -> Result<Stock, Error> {
 
     parse(&text).ok_or(Error::Parse)
 }
+
+pub async fn valid(symbol: &str) ->bool{
+    fetch_stock(symbol, Range::OneDay).await.is_ok()
+}

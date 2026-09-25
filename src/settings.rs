@@ -37,4 +37,25 @@ impl Settings {
             self.set_bookmarks(bookmarks);
         }
     }
+
+    pub fn reorder_bookmarks(&self, a: usize, b: usize) {
+        if a == b {
+            return;
+        }
+
+        let mut bookmarks = self.get_bookmarks();
+        let temp = bookmarks[a].clone();
+        if a < b {
+            for i in a + 1..=b {
+                bookmarks[i - 1] = bookmarks[i].clone();
+            }
+        } else {
+            for i in (b + 1..=a).rev() {
+                bookmarks[i] = bookmarks[i - 1].clone();
+            }
+        }
+        bookmarks[b] = temp;
+
+        self.set_bookmarks(bookmarks);
+    }
 }

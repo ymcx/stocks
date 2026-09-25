@@ -20,8 +20,8 @@ use adw::{
 };
 use async_channel::Sender;
 use gtk::{
-    GestureClick, PopoverMenu,
-    gdk::Rectangle,
+    DragSource, DropTarget, GestureClick, PopoverMenu, WidgetPaintable,
+    gdk::{ContentProvider, DragAction, Rectangle},
     gio::{SimpleAction, SimpleActionGroup},
 };
 use std::{
@@ -83,7 +83,53 @@ fn create_about_dialog() -> AboutDialog {
 
 fn create_row(sidebar: &ListBox, bookmark: &str, settings: &Settings) -> ListBoxRow {
     let row = ListBoxRow::builder().activatable(true).build();
+    let source = DragSource::builder().actions(DragAction::MOVE).build();
+
+    source.connect_prepare({
+        let row = row.clone();
+        move |_, _, _| Some(ContentProvider::for_value(&row.to_value()))
+    });
     let row_box = Box::new(Orientation::Horizontal, 12);
+
+    source.connect_drag_begin({
+        let row_box = row_box.clone();
+        move |source, _| {
+            let paintable = WidgetPaintable::new(Some(&row_box.clone()));
+
+            source.set_icon(Some(&paintable), -15, -15);
+        }
+    });
+
+    row.add_controller(source);
+    let target = DropTarget::new(ListBoxRow::static_type(), DragAction::MOVE);
+
+    let val_sid = sidebar.clone();
+    let val_set = settings.clone();
+    target.connect_drop(move |target, value, _, _| {
+        let Ok(source_row) = value.get::<ListBoxRow>() else {
+            return false;
+        };
+
+        let Some(target_row) = target
+            .widget()
+            .and_then(|w| w.downcast::<ListBoxRow>().ok())
+        else {
+            return false;
+        };
+
+        let a = source_row.index() as usize;
+        let b = target_row.index() as usize;
+        val_set.reorder_bookmarks(a, b);
+        fill_sidebar(&val_sid, &val_set);
+
+        true
+    });
+
+    row.add_controller(target);
+    row_box.set_margin_bottom(8);
+    row_box.set_margin_end(8);
+    row_box.set_margin_top(8);
+    row_box.set_margin_start(8);
     let label = Label::new(Some(bookmark));
     label.set_xalign(0.0);
     label.set_hexpand(true);
@@ -123,6 +169,13 @@ fn create_row(sidebar: &ListBox, bookmark: &str, settings: &Settings) -> ListBox
     row.insert_action_group("row", Some(&actions));
 
     row
+}
+fn fill_sidebar(sidebar: &ListBox, settings: &Settings) {
+    sidebar.remove_all();
+    for bookmark in settings.get_bookmarks() {
+        let row = create_row(sidebar, &bookmark, settings);
+        sidebar.append(&row);
+    }
 }
 fn create_sidebar(
     window: &Window,
@@ -183,10 +236,7 @@ fn create_sidebar(
         }
     });
 
-    for bookmark in settings.get_bookmarks() {
-        let row = create_row(&sidebar, &bookmark, &settings);
-        sidebar.append(&row);
-    }
+    fill_sidebar(&sidebar, &settings);
 
     let sidebar_page = NavigationPage::new(&sidebar_view, APP_NAME);
     sidebar_page

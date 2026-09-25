@@ -5,11 +5,12 @@ use crate::{
     window::Window,
 };
 use adw::{
-    AboutDialog, Application, Bin, Breakpoint, BreakpointCondition, Dialog, HeaderBar,
-    NavigationPage, NavigationSplitView, NavigationView, StatusPage, ToolbarView,
+    AboutDialog, Application, Bin, Breakpoint, BreakpointCondition, Dialog, EntryRow, HeaderBar,
+    NavigationPage, NavigationSplitView, NavigationView, PreferencesGroup, PreferencesPage,
+    StatusPage, ToolbarView,
     gtk::{
-        Box, Button, DrawingArea, Entry, Label, ListBox, ListBoxRow, MenuButton, Orientation,
-        PolicyType, ScrolledWindow, SelectionMode,
+        Box, Button, DrawingArea, Label, ListBox, ListBoxRow, MenuButton, Orientation, PolicyType,
+        ScrolledWindow, SelectionMode,
         cairo::Context,
         gio::Menu,
         glib::{self, ExitCode},
@@ -75,7 +76,7 @@ fn create_about_dialog() -> AboutDialog {
         .issue_url("https://github.com/ymcx/stocks/issues")
         .license_type(gtk::License::MitX11)
         .version(APP_VERSION)
-        .website("https://github.com/ymcx/stocks/issues")
+        .website("https://github.com/ymcx/stocks")
         .build();
     dial
 }
@@ -144,7 +145,7 @@ fn create_sidebar(
     });
     app.add_action(&new_action);
 
-    let add_button = Button::builder().icon_name("list-add-symbolic").build();
+    let add_button = Button::builder().icon_name("bookmark-new-symbolic").build();
 
     let value = window.clone();
     add_button.connect_clicked(move |_| {
@@ -187,7 +188,7 @@ fn create_sidebar(
         sidebar.append(&row);
     }
 
-    let sidebar_page = NavigationPage::new(&sidebar_view, "Bookmarks");
+    let sidebar_page = NavigationPage::new(&sidebar_view, APP_NAME);
     sidebar_page
 }
 fn addf(symbol: &str, settings: &Settings, value_sidebar: &ListBox) {
@@ -196,26 +197,23 @@ fn addf(symbol: &str, settings: &Settings, value_sidebar: &ListBox) {
     value_sidebar.append(&row);
 }
 fn create_dialog(settings: Settings, value_sidebar: ListBox) -> Dialog {
-    let entry = Entry::builder()
-        .placeholder_text("Stock symbol")
+    let preferences_page = PreferencesPage::new();
+    let preferences_group = PreferencesGroup::new();
+    let entry = EntryRow::builder()
+        .title("Stock Symbol")
         .hexpand(true)
         .activates_default(true)
         .build();
 
-    let error_label = Label::builder()
-        .label("No stock found with that symbol")
-        .xalign(0.0)
-        .visible(false)
-        .css_classes(["error"])
-        .build();
+    preferences_group.add(&entry);
+    preferences_page.add(&preferences_group);
 
     let content = Box::new(Orientation::Vertical, 6);
-    content.set_margin_top(24);
+    content.set_margin_top(0);
     content.set_margin_bottom(24);
-    content.set_margin_start(24);
-    content.set_margin_end(24);
-    content.append(&entry);
-    content.append(&error_label);
+    content.set_margin_start(0);
+    content.set_margin_end(0);
+    content.append(&preferences_page);
 
     let header = HeaderBar::builder()
         .show_start_title_buttons(false)
@@ -266,10 +264,8 @@ fn create_dialog(settings: Settings, value_sidebar: ListBox) -> Dialog {
 
     entry.connect_changed({
         let entry = entry.clone();
-        let error_label = error_label.clone();
         move |_| {
             entry.remove_css_class("error");
-            error_label.set_visible(false);
         }
     });
 
@@ -278,7 +274,6 @@ fn create_dialog(settings: Settings, value_sidebar: ListBox) -> Dialog {
         let settings = settings.clone();
         let sidebar = value_sidebar.clone();
         let entry = entry.clone();
-        let error_label = error_label.clone();
         let add_button = add_button.clone();
         let generation = generation.clone();
         move |_| {
@@ -286,7 +281,6 @@ fn create_dialog(settings: Settings, value_sidebar: ListBox) -> Dialog {
 
             if symbol.is_empty() {
                 entry.add_css_class("error");
-                error_label.set_visible(true);
                 entry.grab_focus();
                 return;
             }
@@ -305,7 +299,6 @@ fn create_dialog(settings: Settings, value_sidebar: ListBox) -> Dialog {
                 let settings = settings.clone();
                 let sidebar = sidebar.clone();
                 let entry = entry.clone();
-                let error_label = error_label.clone();
                 let add_button = add_button.clone();
                 let generation = generation.clone();
                 let current = generation.get();
@@ -324,7 +317,6 @@ fn create_dialog(settings: Settings, value_sidebar: ListBox) -> Dialog {
                         dialog.close();
                     } else {
                         entry.add_css_class("error");
-                        error_label.set_visible(true);
                         entry.grab_focus();
                     }
                 }
@@ -334,7 +326,6 @@ fn create_dialog(settings: Settings, value_sidebar: ListBox) -> Dialog {
 
     dialog.connect_map({
         let entry = entry.clone();
-        let error_label = error_label.clone();
         let add_button = add_button.clone();
         let generation = generation.clone();
         move |_| {
@@ -342,7 +333,6 @@ fn create_dialog(settings: Settings, value_sidebar: ListBox) -> Dialog {
             entry.set_sensitive(true);
             add_button.set_sensitive(true);
             entry.remove_css_class("error");
-            error_label.set_visible(false);
             entry.grab_focus();
         }
     });

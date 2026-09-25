@@ -13,26 +13,26 @@
     <linearGradient
        id="swatch85">
       <stop
-         style="stop-color:#62d8ea;stop-opacity:1;"
+         style="stop-color:#00b7ff;stop-opacity:1;"
          offset="0"
          id="stop85" />
       <stop
-         style="stop-color:#3d8791;stop-opacity:1;"
+         style="stop-color:#007aaa;stop-opacity:1;"
          offset="0.5"
          id="stop87" />
       <stop
-         style="stop-color:#62d8ea;stop-opacity:1;"
+         style="stop-color:#00b7ff;stop-opacity:1;"
          offset="1"
          id="stop86" />
     </linearGradient>
     <linearGradient
        id="linearGradient70">
       <stop
-         style="stop-color:#62d8ea;stop-opacity:1;"
-         offset="0.7263937"
+         style="stop-color:#00b7ff;stop-opacity:1;"
+         offset="0.74999988"
          id="stop70" />
       <stop
-         style="stop-color:#86dfea;stop-opacity:1;"
+         style="stop-color:#40c9ff;stop-opacity:1;"
          offset="1"
          id="stop71" />
     </linearGradient>
@@ -50,16 +50,16 @@
     <linearGradient
        id="linearGradient54">
       <stop
-         style="stop-color:#3d8791;stop-opacity:0;"
+         style="stop-color:#00b7ff;stop-opacity:0;"
          offset="0.5"
          id="stop54" />
       <stop
-         style="stop-color:#62d8ea;stop-opacity:1;"
-         offset="0.93268907"
+         style="stop-color:#00b7ff;stop-opacity:1;"
+         offset="0.94999999"
          id="stop68" />
       <stop
-         style="stop-color:#62d8ea;stop-opacity:0;"
-         offset="1"
+         style="stop-color:#00b7ff;stop-opacity:0;"
+         offset="0.99705583"
          id="stop55" />
     </linearGradient>
     <mask
@@ -133,7 +133,7 @@
        y2="102.48592"
        gradientUnits="userSpaceOnUse"
        spreadMethod="pad"
-       gradientTransform="translate(-12,-12)" />
+       gradientTransform="matrix(0.5,0,0,1,29,-12)" />
   </defs>
   <linearGradient
      id="a"
@@ -347,24 +347,24 @@
      mask="url(#mask64)"
      transform="translate(-12,-12)" />
   <path
-     style="display:inline;fill:none;fill-opacity:1;stroke:#9a9996;stroke-width:5.21286;stroke-linecap:butt;stroke-linejoin:miter;stroke-dasharray:none;stroke-opacity:1"
+     style="display:inline;fill:none;fill-opacity:1;stroke:#9a9996;stroke-width:4.17029;stroke-linecap:butt;stroke-linejoin:miter;stroke-dasharray:none;stroke-opacity:1"
      d="m 118.00001,27.391315 -18,21.739131 -18,-10.869566 -18,5.434783 -18,38.043478 -18,10.869566 -18,-5.434783"
      id="path50"
      transform="matrix(-1,0,0,-0.92,116.00001,103.20001)"
      mask="url(#mask61)" />
   <rect
-     style="display:inline;opacity:1;fill:url(#linearGradient86);fill-rule:nonzero;stroke:none;stroke-width:4.95188;stroke-linecap:butt;stroke-linejoin:miter;stroke-dasharray:none;paint-order:stroke markers fill"
+     style="display:inline;opacity:1;fill:url(#linearGradient86);fill-rule:nonzero;stroke:none;stroke-width:3.50151;stroke-linecap:butt;stroke-linejoin:miter;stroke-dasharray:none;paint-order:stroke markers fill"
      id="rect65"
-     width="4"
+     width="2"
      height="92"
-     x="68"
+     x="69"
      y="2" />
   <g
      id="layer2"
      transform="translate(-14.3125,-10.625)"
      style="display:inline">
     <circle
-       style="display:inline;opacity:0.75;fill:none;fill-opacity:1;stroke:url(#radialGradient55);stroke-width:5;stroke-linecap:butt;stroke-linejoin:miter;stroke-dasharray:none;stroke-opacity:1;paint-order:stroke markers fill"
+       style="display:inline;opacity:0.5;fill:none;fill-opacity:1;stroke:url(#radialGradient55);stroke-width:5;stroke-linecap:butt;stroke-linejoin:miter;stroke-dasharray:none;stroke-opacity:1;paint-order:stroke markers fill"
        id="circle54"
        cx="84.3125"
        cy="41.125"

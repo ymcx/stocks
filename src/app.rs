@@ -2,12 +2,11 @@ use crate::{
     APP_ID, APP_NAME, APP_VERSION,
     api::{self, Range, Stock},
     settings::Settings,
-    window::Window,
 };
 use adw::{
-    AboutDialog, Application, Bin, Breakpoint, BreakpointCondition, Dialog, EntryRow, HeaderBar,
-    NavigationPage, NavigationSplitView, NavigationView, PreferencesGroup, PreferencesPage,
-    StatusPage, ToolbarView,
+    AboutDialog, Application, ApplicationWindow, Bin, Breakpoint, BreakpointCondition, Dialog,
+    EntryRow, HeaderBar, NavigationPage, NavigationSplitView, NavigationView, PreferencesGroup,
+    PreferencesPage, StatusPage, ToolbarView,
     gtk::{
         Box, Button, DrawingArea, Label, ListBox, ListBoxRow, MenuButton, Orientation, PolicyType,
         ScrolledWindow, SelectionMode,
@@ -20,9 +19,7 @@ use adw::{
 };
 use async_channel::Sender;
 use gtk::{
-    DragSource, DropTarget, GestureClick, PopoverMenu, WidgetPaintable,
-    gdk::{ContentProvider, DragAction, Rectangle},
-    gio::{SimpleAction, SimpleActionGroup},
+    DragSource, DropTarget, GestureClick, PopoverMenu, WidgetPaintable, gdk::{ContentProvider, DragAction, Rectangle}, gio::{SimpleAction, SimpleActionGroup}, glib::Propagation,
 };
 use std::{
     cell::{Cell, RefCell},
@@ -178,7 +175,7 @@ fn fill_sidebar(sidebar: &ListBox, settings: &Settings) {
     }
 }
 fn create_sidebar(
-    window: &Window,
+    window: &ApplicationWindow,
     sidebar: ListBox,
     dialog: Dialog,
     settings: Settings,
@@ -391,8 +388,30 @@ fn create_dialog(settings: Settings, value_sidebar: ListBox) -> Dialog {
 }
 
 fn build_ui(app: &Application) {
-    let window = Window::new(app);
-    window.set_title(Some(APP_NAME));
+    let settings = Settings::new();
+    let window = ApplicationWindow::builder()
+        .application(app)
+        .title(APP_NAME)
+        .default_width(settings.get_window_width())
+        .default_height(settings.get_window_height())
+        .build();
+
+    window.connect_close_request({
+        let settings = settings.clone();
+
+        move |window| {
+            let (width, height) = window.default_size();
+            settings.set_window_width(width);
+            settings.set_window_height(height);
+            settings.set_window_maximized(window.is_maximized());
+
+            Propagation::Proceed
+        }
+    });
+
+    if settings.get_window_maximized() {
+        window.maximize();
+    }
 
     let split = NavigationSplitView::new();
 
@@ -401,8 +420,6 @@ fn build_ui(app: &Application) {
     );
     breakpoint.add_setter(&split, "collapsed", Some(&true.to_value()));
     window.add_breakpoint(breakpoint);
-
-    let settings = Settings::new();
 
     let (sender, receiver) = async_channel::bounded(1);
 

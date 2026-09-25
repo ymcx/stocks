@@ -1,5 +1,5 @@
 use crate::APP_ID;
-use adw::gtk::gio::{self, prelude::SettingsExtManual};
+use adw::gtk::gio::{self, prelude::*};
 
 #[derive(Clone)]
 pub struct Settings {
@@ -10,6 +10,32 @@ impl Settings {
     pub fn new() -> Self {
         let settings = gio::Settings::new(APP_ID);
         Self { settings }
+    }
+
+    pub fn set_window_width(&self, width: i32) {
+        self.settings.set_int("window-width", width).unwrap();
+    }
+
+    pub fn set_window_height(&self, height: i32) {
+        self.settings.set_int("window-height", height).unwrap();
+    }
+
+    pub fn set_window_maximized(&self, maximized: bool) {
+        self.settings
+            .set_boolean("window-maximized", maximized)
+            .unwrap();
+    }
+
+    pub fn get_window_width(&self) -> i32 {
+        self.settings.int("window-width")
+    }
+
+    pub fn get_window_height(&self) -> i32 {
+        self.settings.int("window-height")
+    }
+
+    pub fn get_window_maximized(&self) -> bool {
+        self.settings.boolean("window-maximized")
     }
 
     pub fn get_bookmarks(&self) -> Vec<String> {

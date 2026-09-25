@@ -12,7 +12,7 @@
       <default>-1</default>
       <summary>Default window height</summary>
     </key>
-    <key name="is-maximized" type="b">
+    <key name="window-maximized" type="b">
       <default>false</default>
       <summary>Default window maximized behaviour</summary>
     </key>

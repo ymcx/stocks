@@ -4,7 +4,6 @@ use gtk::gio;
 mod api;
 mod app;
 mod settings;
-mod window;
 
 const APP_VERSION: &str = "1.0";
 const APP_NAME: &str = "Stocks";

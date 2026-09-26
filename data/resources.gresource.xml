@@ -1,6 +1,6 @@
-<?xml version="1.0" encoding="UTF-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <gresources>
-    <gresource prefix="/com/ymcx/Stocks/icons/scalable/apps">
-        <file alias="com.ymcx.Stocks.svg">icon.svg</file>
-    </gresource>
+  <gresource prefix="/com/ymcx/Stocks/icons">
+    <file>com.ymcx.Stocks.svg</file>
+  </gresource>
 </gresources>

@@ -41,7 +41,7 @@ impl Settings {
     pub fn get_bookmarks(&self) -> Vec<String> {
         self.settings
             .strv("bookmarks")
-            .iter()
+            .into_iter()
             .map(|i| i.to_string())
             .collect()
     }
@@ -50,38 +50,35 @@ impl Settings {
         self.settings.set_strv("bookmarks", bookmarks).unwrap();
     }
 
-    pub fn add_bookmarks(&self, bookmark: &str) {
+    pub fn add_bookmark(&self, bookmark: &str) {
         let mut bookmarks = self.get_bookmarks();
         bookmarks.push(bookmark.to_string());
         self.set_bookmarks(bookmarks);
     }
 
-    pub fn del_bookmarks(&self, bookmark: &str) {
+    pub fn remove_bookmark(&self, index: i32) {
         let mut bookmarks = self.get_bookmarks();
-        if let Some(i) = bookmarks.iter().position(|x| x == bookmark) {
-            bookmarks.remove(i);
-            self.set_bookmarks(bookmarks);
-        }
+        bookmarks.remove(index as usize);
+        self.set_bookmarks(bookmarks);
     }
 
-    pub fn reorder_bookmarks(&self, a: usize, b: usize) {
-        if a == b {
+    pub fn reorder_bookmarks(&self, index1: usize, index2: usize) {
+        if index1 == index2 {
             return;
         }
 
         let mut bookmarks = self.get_bookmarks();
-        let temp = bookmarks[a].clone();
-        if a < b {
-            for i in a + 1..=b {
-                bookmarks[i - 1] = bookmarks[i].clone();
+        let temp = bookmarks[index1].to_string();
+        if index1 < index2 {
+            for i in index1 + 1..=index2 {
+                bookmarks[i - 1] = bookmarks[i].to_string();
             }
         } else {
-            for i in (b + 1..=a).rev() {
-                bookmarks[i] = bookmarks[i - 1].clone();
+            for i in (index2 + 1..=index1).rev() {
+                bookmarks[i] = bookmarks[i - 1].to_string();
             }
         }
-        bookmarks[b] = temp;
-
+        bookmarks[index2] = temp;
         self.set_bookmarks(bookmarks);
     }
 }

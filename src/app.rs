@@ -1,6 +1,6 @@
 use crate::{
     APP_ID, APP_NAME, APP_VERSION,
-    api::{self, Range, Stock},
+    api::{Range, Stock},
     settings::Settings,
 };
 use adw::{
@@ -8,19 +8,20 @@ use adw::{
     EntryRow, HeaderBar, NavigationPage, NavigationSplitView, NavigationView, PreferencesGroup,
     PreferencesPage, StatusPage, ToolbarView,
     gtk::{
-        Box, Button, DrawingArea, Label, ListBox, ListBoxRow, MenuButton, Orientation, PolicyType,
-        ScrolledWindow, SelectionMode,
+        Align, Box, Button, DragSource, DrawingArea, DropTarget, GestureClick, Label, License,
+        ListBox, ListBoxRow, MenuButton, Orientation, PolicyType, PopoverMenu, ScrolledWindow,
+        SelectionMode, WidgetPaintable,
         cairo::Context,
+        gdk::{ContentProvider, DragAction, Rectangle},
         gio::Menu,
+        gio::{SimpleAction, SimpleActionGroup},
+        glib::Propagation,
         glib::{self, ExitCode},
         pango::EllipsizeMode,
     },
     prelude::*,
 };
 use async_channel::Sender;
-use gtk::{
-    DragSource, DropTarget, GestureClick, PopoverMenu, WidgetPaintable, gdk::{ContentProvider, DragAction, Rectangle}, gio::{SimpleAction, SimpleActionGroup}, glib::Propagation,
-};
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
@@ -42,11 +43,11 @@ fn runtime() -> &'static Runtime {
 }
 
 async fn fetch_into(symbol: String, range: Range, sender: Sender<Stock>) {
-    match api::fetch_stock(&symbol, range).await {
-        Ok(stock) => {
+    match Stock::fetch(&symbol, range).await {
+        Some(stock) => {
             let _ = sender.send(stock).await;
         }
-        Err(error) => eprintln!("Failed to fetch {symbol}: {error}"),
+        None => eprintln!("Failed to fetch {symbol}"),
     }
 }
 fn create_navigation_empty(navigation: NavigationView) -> NavigationPage {
@@ -71,7 +72,7 @@ fn create_about_dialog() -> AboutDialog {
         .application_name(APP_NAME)
         .developer_name("ymcx")
         .issue_url("https://github.com/ymcx/stocks/issues")
-        .license_type(gtk::License::MitX11)
+        .license_type(License::MitX11)
         .version(APP_VERSION)
         .website("https://github.com/ymcx/stocks")
         .build();
@@ -156,12 +157,13 @@ fn create_row(sidebar: &ListBox, bookmark: &str, settings: &Settings) -> ListBox
     let delete_action = SimpleAction::new("delete", None);
     actions.add_action(&delete_action);
     let settings_value = settings.clone();
-    let b = bookmark.to_string();
+    // let b = bookmark.to_string();
     let rr = row.clone();
     let ss = sidebar.clone();
     delete_action.connect_activate(move |_, _| {
+        let i = rr.index();
         ss.remove(&rr);
-        settings_value.del_bookmarks(&b);
+        settings_value.remove_bookmark(i);
     });
     row.insert_action_group("row", Some(&actions));
 
@@ -239,7 +241,7 @@ fn create_sidebar(
     sidebar_page
 }
 fn addf(symbol: &str, settings: &Settings, value_sidebar: &ListBox) {
-    settings.add_bookmarks(symbol);
+    settings.add_bookmark(symbol);
     let row = create_row(value_sidebar, symbol, settings);
     value_sidebar.append(&row);
 }
@@ -270,12 +272,12 @@ fn create_dialog(settings: Settings, value_sidebar: ListBox) -> Dialog {
     let cancel = Button::builder()
         .label("_Cancel")
         .use_underline(true)
-        .valign(gtk::Align::Center)
+        .valign(Align::Center)
         .build();
     let add_button = Button::builder()
         .label("_Add")
         .use_underline(true)
-        .valign(gtk::Align::Center)
+        .valign(Align::Center)
         .css_classes(["suggested-action"])
         .build();
 
@@ -338,7 +340,7 @@ fn create_dialog(settings: Settings, value_sidebar: ListBox) -> Dialog {
             let (sender, receiver) = async_channel::bounded(1);
             let check = symbol.clone();
             runtime().spawn(async move {
-                let _ = sender.send(api::valid(&check).await).await;
+                let _ = sender.send(Stock::is_valid(&check).await).await;
             });
 
             glib::spawn_future_local({
@@ -483,7 +485,7 @@ fn create_stock_page(stock: Stock) -> NavigationPage {
     chart.set_draw_func({
         let state = state.clone();
         move |area, cr, width, height| {
-            draw_chart(area, cr, width, height, &state.borrow().open);
+            draw_chart(area, cr, width, height, &state.borrow().quote_open);
         }
     });
 
@@ -496,7 +498,7 @@ fn create_stock_page(stock: Stock) -> NavigationPage {
 
     let (sender, receiver) = async_channel::bounded(1);
 
-    for range in Range::ALL {
+    for range in Range::VALUES {
         let button = Button::builder().label(range.as_str()).build();
 
         button.connect_clicked({
@@ -519,8 +521,8 @@ fn create_stock_page(stock: Stock) -> NavigationPage {
         let price = price.clone();
         async move {
             while let Ok(stock) = receiver.recv().await {
-                title.set_label(stock.name());
-                price.set_label(&format_price(stock.price, &stock.currency));
+                title.set_label(&stock.symbol);
+                price.set_label(&format_price(stock.chart_previous_close, &stock.currency));
                 *state.borrow_mut() = stock;
                 chart.queue_draw();
             }
@@ -541,8 +543,8 @@ fn create_stock_page(stock: Stock) -> NavigationPage {
     content.append(&ranges_scroll);
 
     let stock = state.borrow();
-    title.set_label(stock.name());
-    price.set_label(&format_price(stock.price, &stock.currency));
+    title.set_label(&stock.symbol);
+    price.set_label(&format_price(stock.chart_previous_close, &stock.currency));
 
     let view = ToolbarView::new();
     view.add_top_bar(&HeaderBar::new());

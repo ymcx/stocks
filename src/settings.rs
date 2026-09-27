@@ -56,7 +56,7 @@ impl Settings {
         self.set_bookmarks(bookmarks);
     }
 
-    pub fn remove_bookmark(&self, index: i32) {
+    pub fn remove_bookmark(&self, index: usize) {
         let mut bookmarks = self.get_bookmarks();
         bookmarks.remove(index as usize);
         self.set_bookmarks(bookmarks);

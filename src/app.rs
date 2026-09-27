@@ -21,13 +21,15 @@ use adw::{
     },
     prelude::*,
 };
-use async_channel::Sender;
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
     sync::OnceLock,
 };
-use tokio::runtime::Runtime;
+use tokio::{
+    runtime::Runtime,
+    sync::mpsc::{self, Sender},
+};
 
 const DEFAULT_RANGE: Range = Range::OneMonth;
 
@@ -157,13 +159,12 @@ fn create_row(sidebar: &ListBox, bookmark: &str, settings: &Settings) -> ListBox
     let delete_action = SimpleAction::new("delete", None);
     actions.add_action(&delete_action);
     let settings_value = settings.clone();
-    // let b = bookmark.to_string();
     let rr = row.clone();
     let ss = sidebar.clone();
     delete_action.connect_activate(move |_, _| {
         let i = rr.index();
         ss.remove(&rr);
-        settings_value.remove_bookmark(i);
+        settings_value.remove_bookmark(i as usize);
     });
     row.insert_action_group("row", Some(&actions));
 
@@ -337,7 +338,7 @@ fn create_dialog(settings: Settings, value_sidebar: ListBox) -> Dialog {
             entry.set_sensitive(false);
             add_button.set_sensitive(false);
 
-            let (sender, receiver) = async_channel::bounded(1);
+            let (sender, mut receiver) = mpsc::channel(1);
             let check = symbol.clone();
             runtime().spawn(async move {
                 let _ = sender.send(Stock::is_valid(&check).await).await;
@@ -423,7 +424,7 @@ fn build_ui(app: &Application) {
     breakpoint.add_setter(&split, "collapsed", Some(&true.to_value()));
     window.add_breakpoint(breakpoint);
 
-    let (sender, receiver) = async_channel::bounded(1);
+    let (sender, mut receiver) = mpsc::channel(1);
 
     let side = ListBox::new();
     side.add_css_class("navigation-sidebar");
@@ -443,7 +444,7 @@ fn build_ui(app: &Application) {
         let navigation = navigation.clone();
         let split = split.clone();
         async move {
-            while let Ok(stock) = receiver.recv().await {
+            while let Some(stock) = receiver.recv().await {
                 navigation.replace(&[create_stock_page(stock)]);
                 split.set_show_content(true);
             }
@@ -496,7 +497,7 @@ fn create_stock_page(stock: Stock) -> NavigationPage {
     ranges.set_margin_start(12);
     ranges.set_margin_end(12);
 
-    let (sender, receiver) = async_channel::bounded(1);
+    let (sender, mut receiver) = mpsc::channel(1);
 
     for range in Range::VALUES {
         let button = Button::builder().label(range.as_str()).build();
@@ -520,7 +521,7 @@ fn create_stock_page(stock: Stock) -> NavigationPage {
         let title = title.clone();
         let price = price.clone();
         async move {
-            while let Ok(stock) = receiver.recv().await {
+            while let Some(stock) = receiver.recv().await {
                 title.set_label(&stock.symbol);
                 price.set_label(&format_price(stock.chart_previous_close, &stock.currency));
                 *state.borrow_mut() = stock;

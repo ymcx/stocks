@@ -431,6 +431,27 @@ impl Stock {
     pub async fn is_valid(symbol: &str) -> bool {
         Self::fetch(symbol, Range::OneDay).await.is_some()
     }
+
+    pub fn get_price_string(&self) -> String {
+        let price = self.regular_market_price;
+        let currency = self.currency.as_str();
+        let symbol = match currency {
+            "USD" => Some('$'),
+            "EUR" => Some('€'),
+            "GBP" => Some('£'),
+            "JPY" => Some('¥'),
+            "CNY" => Some('¥'),
+            "KRW" => Some('₩'),
+            "INR" => Some('₹'),
+            _ => None,
+        };
+
+        if let Some(symbol) = symbol {
+            format!("{symbol}{price:.2}")
+        } else {
+            format!("{price:.2} {currency}")
+        }
+    }
 }
 
 fn client() -> &'static Client {

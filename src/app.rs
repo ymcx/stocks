@@ -8,28 +8,24 @@ use adw::{
     EntryRow, HeaderBar, NavigationPage, NavigationSplitView, NavigationView, PreferencesGroup,
     PreferencesPage, StatusPage, ToolbarView,
     gtk::{
-        Align, Box, Button, DragSource, DrawingArea, DropTarget, GestureClick, Label, License,
-        ListBox, ListBoxRow, MenuButton, Orientation, PolicyType, PopoverMenu, ScrolledWindow,
+        Box, Button, DragSource, DrawingArea, DropTarget, GestureClick, Label, License, ListBox,
+        ListBoxRow, MenuButton, Orientation, PolicyType, PopoverMenu, ScrolledWindow,
         SelectionMode, WidgetPaintable,
         cairo::Context,
         gdk::{ContentProvider, DragAction, Rectangle},
-        gio::Menu,
-        gio::{SimpleAction, SimpleActionGroup},
-        glib::Propagation,
-        glib::{self, ExitCode},
+        gio::{Menu, SimpleAction, SimpleActionGroup},
+        glib::{self, ExitCode, Propagation},
         pango::EllipsizeMode,
     },
     prelude::*,
 };
-use std::{
-    cell::{Cell, RefCell},
-    rc::Rc,
-    sync::OnceLock,
-};
+use std::{cell::RefCell, rc::Rc, sync::OnceLock};
 use tokio::{
     runtime::Runtime,
     sync::mpsc::{self, Sender},
 };
+
+// TODO: save range in settings
 
 pub fn run() -> ExitCode {
     let app = Application::builder().application_id(APP_ID).build();
@@ -37,43 +33,29 @@ pub fn run() -> ExitCode {
     app.run()
 }
 
-fn runtime() -> &'static Runtime {
-    static RUNTIME: OnceLock<Runtime> = OnceLock::new();
-    RUNTIME.get_or_init(|| Runtime::new().expect("setting up the tokio runtime should succeed"))
-}
-
-async fn fetch_into(symbol: String, range: Range, sender: Sender<Stock>) {
-    match Stock::fetch(&symbol, range).await {
-        Some(stock) => {
-            let _ = sender.send(stock).await;
-        }
-        None => eprintln!("Failed to fetch {symbol}"),
-    }
-}
-fn create_navigation_empty(navigation: NavigationView) -> NavigationPage {
-    let placeholder = StatusPage::builder()
+fn create_placeholder_page() -> NavigationPage {
+    let header_bar = HeaderBar::new();
+    let status_page = StatusPage::builder()
         .title(APP_NAME)
         .description("Select a stock from the sidebar")
         .icon_name("view-list-symbolic")
         .build();
 
-    let placeholder_view = ToolbarView::new();
-    placeholder_view.add_top_bar(&HeaderBar::new());
-    placeholder_view.set_content(Some(&placeholder));
+    let toolbar_view = ToolbarView::new();
+    toolbar_view.add_top_bar(&header_bar);
+    toolbar_view.set_content(Some(&status_page));
 
-    let home_page = NavigationPage::builder()
+    let navigation_page = NavigationPage::builder()
         .title(APP_NAME)
         .tag("home")
-        .child(&placeholder_view)
+        .child(&toolbar_view)
         .build();
-    navigation.add(&home_page);
 
-    let content_page = NavigationPage::new(&navigation, APP_NAME);
-    content_page
+    navigation_page
 }
 
 fn create_about_dialog() -> AboutDialog {
-    let dial = adw::AboutDialog::builder()
+    let about_dialog = AboutDialog::builder()
         .application_icon(APP_ID)
         .application_name(APP_NAME)
         .developer_name("ymcx")
@@ -82,408 +64,293 @@ fn create_about_dialog() -> AboutDialog {
         .version(APP_VERSION)
         .website("https://github.com/ymcx/stocks")
         .build();
-    dial
+
+    about_dialog
 }
 
-fn create_row(
-    sidebar: &ListBox,
-    bookmark: &str,
-    settings: &Settings,
-    split: &NavigationSplitView,
-    navigation: &NavigationView,
-) -> ListBoxRow {
-    let row = ListBoxRow::builder().activatable(true).build();
-    let source = DragSource::builder().actions(DragAction::MOVE).build();
+fn create_sidebar_button(sidebar: &ListBox, bookmark: &str, settings: &Settings) -> ListBoxRow {
+    let list_box_row = ListBoxRow::new();
 
-    source.connect_prepare({
-        let row = row.clone();
-        move |_, _, _| Some(ContentProvider::for_value(&row.to_value()))
-    });
-    let row_box = Box::new(Orientation::Horizontal, 12);
+    let row_box = Box::builder()
+        .margin_bottom(8)
+        .margin_end(8)
+        .margin_start(8)
+        .margin_top(8)
+        .build();
+    list_box_row.set_child(Some(&row_box));
 
-    source.connect_drag_begin({
-        let row_box = row_box.clone();
-        move |source, _| {
-            let paintable = WidgetPaintable::new(Some(&row_box));
+    let label = Label::builder()
+        .ellipsize(EllipsizeMode::End)
+        .label(bookmark)
+        .build();
+    row_box.append(&label);
 
-            source.set_icon(Some(&paintable), -15, -15);
+    // TODO: Automatically select Delete by default
+    let menu = Menu::new();
+    menu.append(Some("Delete"), Some("row.delete"));
+
+    let popover_menu = PopoverMenu::builder()
+        .menu_model(&menu)
+        .has_arrow(false)
+        .build();
+    popover_menu.set_parent(&list_box_row);
+
+    let gesture_click = GestureClick::builder().button(3).build();
+    gesture_click.connect_pressed({
+        move |_, _, x, y| {
+            let rectangle = Rectangle::new(x as i32, y as i32, 120, 0);
+            popover_menu.set_pointing_to(Some(&rectangle));
+            popover_menu.popup();
         }
     });
+    list_box_row.add_controller(gesture_click);
 
-    row.add_controller(source);
+    let simple_action_group = SimpleActionGroup::new();
+    list_box_row.insert_action_group("row", Some(&simple_action_group));
 
-    let target = DropTarget::new(ListBoxRow::static_type(), DragAction::MOVE);
-    target.connect_drop({
+    let simple_action = SimpleAction::new("delete", None);
+    simple_action.connect_activate({
+        let list_box_row = list_box_row.clone();
+        let settings = settings.clone();
+        let sidebar = sidebar.clone();
+        move |_, _| {
+            let index = list_box_row.index() as usize;
+            let is_current_or_home = sidebar.selected_row().is_none_or(|i| i == list_box_row);
+            if is_current_or_home {
+                glib::idle_add_local_once({
+                    let sidebar = sidebar.clone();
+                    move || {
+                        sidebar.unselect_all();
+                    }
+                });
+            }
+
+            sidebar.remove(&list_box_row);
+            settings.remove_bookmark(index);
+        }
+    });
+    simple_action_group.add_action(&simple_action);
+
+    let drag_source = DragSource::builder().actions(DragAction::MOVE).build();
+    drag_source.connect_prepare({
+        let value = list_box_row.to_value();
+        move |_, _, _| {
+            let content_provider = ContentProvider::for_value(&value);
+            Some(content_provider)
+        }
+    });
+    drag_source.connect_drag_begin({
+        move |drag_source, _| {
+            let widget_paintable = WidgetPaintable::new(Some(&row_box));
+            drag_source.set_icon(Some(&widget_paintable), -15, -15);
+        }
+    });
+    list_box_row.add_controller(drag_source);
+
+    let drop_target = DropTarget::new(ListBoxRow::static_type(), DragAction::MOVE);
+    drop_target.connect_drop({
         let sidebar = sidebar.clone();
         let settings = settings.clone();
-        let split = split.clone();
-        let navigation = navigation.clone();
-        move |target, value, _, _| {
-            let Ok(source_row) = value.get::<ListBoxRow>() else {
+        move |target, source, _, _| {
+            let Ok(source_row) = source.get::<ListBoxRow>() else {
                 return false;
             };
-
             let Some(target_row) = target
                 .widget()
-                .and_then(|w| w.downcast::<ListBoxRow>().ok())
+                .and_then(|i| i.downcast::<ListBoxRow>().ok())
             else {
                 return false;
             };
 
-            let from = source_row.index() as usize;
-            let to = target_row.index() as usize;
-            if from == to {
+            let source_index = source_row.index() as usize;
+            let target_index = target_row.index() as usize;
+            if source_index == target_index {
                 return true;
             }
 
-            let selected = sidebar
-                .selected_row()
-                .and_then(|row| settings.get_bookmarks().get(row.index() as usize).cloned());
-
-            settings.reorder_bookmarks(from, to);
-
-            glib::idle_add_local_once({
-                let sidebar = sidebar.clone();
-                let settings = settings.clone();
-                let split = split.clone();
-                let navigation = navigation.clone();
-                move || {
-                    fill_sidebar(&sidebar, &settings, &split, &navigation);
-                    if let Some(symbol) = selected {
-                        if let Some(index) =
-                            settings.get_bookmarks().iter().position(|b| *b == symbol)
-                        {
-                            sidebar.select_row(sidebar.row_at_index(index as i32).as_ref());
-                        }
-                    }
-                }
-            });
+            sidebar.remove(&source_row);
+            sidebar.insert(&source_row, target_index as i32);
+            settings.reorder_bookmarks(source_index, target_index);
 
             true
         }
     });
+    list_box_row.add_controller(drop_target);
 
-    row.add_controller(target);
-    row_box.set_margin_bottom(8);
-    row_box.set_margin_end(8);
-    row_box.set_margin_top(8);
-    row_box.set_margin_start(8);
-    let label = Label::new(Some(bookmark));
-    label.set_xalign(0.0);
-    label.set_hexpand(true);
-    label.set_ellipsize(EllipsizeMode::End);
-
-    row_box.append(&label);
-    row.set_child(Some(&row_box));
-
-    let menu = Menu::new();
-    menu.append(Some("Delete"), Some("row.delete"));
-    let popover = PopoverMenu::from_model(Some(&menu));
-    popover.set_has_arrow(false);
-    popover.set_parent(&row);
-    let gesture = GestureClick::new();
-    gesture.set_button(3);
-    gesture.connect_pressed({
-        let popover = popover.clone();
-        move |_, _, x, y| {
-            popover.set_pointing_to(Some(&Rectangle::new(x as i32, y as i32, 1, 1)));
-            popover.popup();
-        }
-    });
-
-    row.add_controller(gesture);
-
-    let actions = SimpleActionGroup::new();
-    let delete_action = SimpleAction::new("delete", None);
-    actions.add_action(&delete_action);
-    row.insert_action_group("row", Some(&actions));
-
-    delete_action.connect_activate({
-        let sidebar = sidebar.clone();
-        let settings = settings.clone();
-        let navigation = navigation.clone();
-        let split = split.clone();
-        let row = row.clone();
-        move |_, _| {
-            let index = row.index() as usize;
-            let was_current = sidebar.selected_row().as_ref() == Some(&row);
-
-            let f = if let Some(i) = navigation.visible_page_tag() {
-                i.as_str() == "home"
-            } else {
-                false
-            };
-            sidebar.remove(&row);
-            settings.remove_bookmark(index);
-
-            if f {
-                sidebar.unselect_all();
-                glib::idle_add_local_once({
-                    let sidebar = sidebar.clone();
-                    move || sidebar.unselect_all()
-                });
-            }
-            if was_current {
-                navigation.replace_with_tags(&["home"]);
-                split.set_show_content(true);
-
-                sidebar.unselect_all();
-                glib::idle_add_local_once({
-                    let sidebar = sidebar.clone();
-                    move || sidebar.unselect_all()
-                });
-            }
-        }
-    });
-
-    row
+    list_box_row
 }
-fn fill_sidebar(
+
+fn create_sidebar(
     sidebar: &ListBox,
     settings: &Settings,
-    split: &NavigationSplitView,
-    navigation: &NavigationView,
-) {
-    sidebar.unselect_all();
-    sidebar.remove_all();
-    for bookmark in settings.get_bookmarks() {
-        let row = create_row(sidebar, &bookmark, settings, split, navigation);
-        sidebar.append(&row);
-    }
-}
-fn create_sidebar(
-    window: &ApplicationWindow,
-    sidebar: ListBox,
-    dialog: Dialog,
-    settings: Settings,
-    sender: Sender<Stock>,
-    app: &Application,
-    split: &NavigationSplitView,
-    navigation: &NavigationView,
+    sender: &Sender<Stock>,
 ) -> NavigationPage {
-    let sidebar_view = ToolbarView::new();
-    let header = &HeaderBar::new();
+    let toolbar_view = ToolbarView::new();
+
+    let header_bar = HeaderBar::new();
+    toolbar_view.add_top_bar(&header_bar);
+
+    let bin = Bin::builder().child(sidebar).build();
+
+    let scrolled_window = ScrolledWindow::builder().child(&bin).build();
+    toolbar_view.set_content(Some(&scrolled_window));
+
     let menu = Menu::new();
     menu.append(Some("About"), Some("app.about"));
 
-    let new_action = SimpleAction::new("about", None);
-    let window_value = window.clone();
-    new_action.connect_activate(move |_, _| {
-        let di = create_about_dialog();
-        di.present(Some(&window_value));
-    });
-    app.add_action(&new_action);
-
-    let add_button = Button::builder().icon_name("bookmark-new-symbolic").build();
-
-    let window = window.clone();
-    add_button.connect_clicked(move |_| {
-        dialog.present(Some(&window));
-    });
+    let add_button = Button::builder()
+        .icon_name("bookmark-new-symbolic")
+        .action_name("app.add")
+        .build();
+    header_bar.pack_start(&add_button);
 
     let menu_button = MenuButton::builder()
-        .label("Menu")
         .icon_name("open-menu-symbolic")
         .menu_model(&menu)
         .build();
-    header.pack_start(&add_button);
-    header.pack_end(&menu_button);
-
-    sidebar_view.add_top_bar(header);
-
-    let sidebar_bin = Bin::new();
-    sidebar_bin.set_child(Some(&sidebar));
-
-    let sidebar_scroll = ScrolledWindow::builder()
-        .hscrollbar_policy(PolicyType::Never)
-        .vscrollbar_policy(PolicyType::Automatic)
-        .child(&sidebar_bin)
-        .build();
-    sidebar_view.set_content(Some(&sidebar_scroll));
+    header_bar.pack_end(&menu_button);
 
     sidebar.connect_row_activated({
         let sender = sender.clone();
         let settings = settings.clone();
-        move |_, row| {
+        move |_, list_box_row| {
             let bookmarks = settings.get_bookmarks();
-            let sender = sender.clone();
-            if let Some(symbol) = bookmarks.get(row.index() as usize) {
-                let symbol = symbol.clone();
-                runtime().spawn(fetch_into(symbol, Range::OneMonth, sender));
+            let index = list_box_row.index() as usize;
+            if let Some(bookmark) = bookmarks.get(index) {
+                let bookmark = bookmark.clone();
+                let sender = sender.clone();
+                let range = Range::OneMonth;
+                let stock = Stock::fetch_and_send(bookmark, range, sender);
+                let runtime = runtime();
+                runtime.spawn(stock);
             }
         }
     });
 
-    fill_sidebar(&sidebar, &settings, &split, navigation);
+    for bookmark in settings.get_bookmarks() {
+        let button = create_sidebar_button(sidebar, &bookmark, settings);
+        sidebar.append(&button);
+    }
 
-    let sidebar_page = NavigationPage::new(&sidebar_view, APP_NAME);
-    sidebar_page
+    let navigation_page = NavigationPage::new(&toolbar_view, APP_NAME);
+
+    navigation_page
 }
 
-fn addf(
-    symbol: &str,
-    settings: &Settings,
-    sidebar: &ListBox,
-    split: &NavigationSplitView,
-    navigation: &NavigationView,
-) {
-    settings.add_bookmark(symbol);
-    let row = create_row(sidebar, symbol, settings, split, navigation);
-    sidebar.append(&row);
-}
-
-fn create_dialog(
-    settings: Settings,
-    sidebar: ListBox,
-    split: &NavigationSplitView,
-    navigation: &NavigationView,
-) -> Dialog {
+fn create_add_dialog(settings: &Settings, sidebar: &ListBox) -> Dialog {
     let preferences_page = PreferencesPage::new();
-    let preferences_group = PreferencesGroup::new();
-    let entry = EntryRow::builder()
-        .title("Stock Symbol")
-        .hexpand(true)
-        .activates_default(true)
-        .build();
 
-    preferences_group.add(&entry);
+    let preferences_group = PreferencesGroup::new();
     preferences_page.add(&preferences_group);
 
-    let content = Box::new(Orientation::Vertical, 6);
-    content.set_margin_top(0);
-    content.set_margin_bottom(24);
-    content.set_margin_start(0);
-    content.set_margin_end(0);
+    // TODO: empty text on dialog open
+    let entry_row = EntryRow::builder()
+        .title("Stock Symbol")
+        .activates_default(true)
+        .build();
+    entry_row.connect_changed({
+        let entry = entry_row.clone();
+        move |_| {
+            entry.remove_css_class("error");
+        }
+    });
+    preferences_group.add(&entry_row);
+
+    let content = Box::builder()
+        .orientation(Orientation::Vertical)
+        .margin_bottom(90)
+        .margin_end(0)
+        .margin_start(0)
+        .margin_top(0)
+        .build();
     content.append(&preferences_page);
 
     let header = HeaderBar::builder()
-        .show_start_title_buttons(false)
         .show_end_title_buttons(false)
+        .show_start_title_buttons(false)
         .build();
 
-    let cancel = Button::builder()
-        .label("_Cancel")
-        .use_underline(true)
-        .valign(Align::Center)
-        .build();
-    let add_button = Button::builder()
-        .label("_Add")
-        .use_underline(true)
-        .valign(Align::Center)
-        .css_classes(["suggested-action"])
-        .build();
-
-    header.pack_start(&cancel);
-    header.pack_end(&add_button);
-
-    let toolbar = ToolbarView::new();
+    let toolbar = ToolbarView::builder().content(&content).build();
     toolbar.add_top_bar(&header);
-    toolbar.set_content(Some(&content));
 
     let dialog = Dialog::builder()
         .title("Add Bookmark")
-        .content_width(420)
-        .default_widget(&add_button)
+        .content_width(640)
         .child(&toolbar)
         .build();
 
-    let generation = Rc::new(Cell::new(0_u64));
+    // TODO: disable add button if entry is empty
+    let button_add = Button::builder()
+        .label("_Add")
+        .use_underline(true)
+        .css_classes(["suggested-action"])
+        .build();
+    button_add.connect_clicked({
+        let dialog = dialog.clone();
+        let settings = settings.clone();
+        let sidebar = sidebar.clone();
+        let entry_row = entry_row.clone();
+        move |_| {
+            let bookmark = entry_row.text().trim().to_uppercase();
+            if bookmark.is_empty() {
+                entry_row.add_css_class("error");
+                entry_row.grab_focus();
+                return;
+            }
 
-    cancel.connect_clicked({
+            let (sender, mut receiver) = mpsc::channel(1);
+            let range = Range::OneMonth;
+            let stock = Stock::fetch_and_send(bookmark.clone(), range, sender);
+            let runtime = runtime();
+            runtime.spawn(stock);
+
+            glib::spawn_future_local({
+                let dialog = dialog.clone();
+                let settings = settings.clone();
+                let sidebar = sidebar.clone();
+                let entry_row = entry_row.clone();
+                async move {
+                    let stock = receiver.recv().await;
+                    if stock.is_none() {
+                        entry_row.add_css_class("error");
+                        entry_row.grab_focus();
+                        return;
+                    }
+
+                    let button = create_sidebar_button(&sidebar, &bookmark, &settings);
+                    sidebar.append(&button);
+                    settings.add_bookmark(&bookmark);
+                    dialog.close();
+                }
+            });
+        }
+    });
+    header.pack_end(&button_add);
+    dialog.set_default_widget(Some(&button_add));
+
+    let button_cancel = Button::builder()
+        .label("_Cancel")
+        .use_underline(true)
+        .build();
+    button_cancel.connect_clicked({
         let dialog = dialog.clone();
         move |_| {
             dialog.close();
         }
     });
-
-    dialog.connect_closed({
-        let generation = generation.clone();
-        move |_| {
-            generation.set(generation.get() + 1);
-        }
-    });
-
-    entry.connect_changed({
-        let entry = entry.clone();
-        move |_| {
-            entry.remove_css_class("error");
-        }
-    });
-
-    let split = split.clone();
-    let navigation = navigation.clone();
-    add_button.connect_clicked({
-        let dialog = dialog.clone();
-        let settings = settings.clone();
-        let sidebar = sidebar.clone();
-        let entry = entry.clone();
-        let add_button = add_button.clone();
-        let generation = generation.clone();
-        move |_| {
-            let symbol = entry.text().trim().to_uppercase();
-
-            if symbol.is_empty() {
-                entry.add_css_class("error");
-                entry.grab_focus();
-                return;
-            }
-
-            entry.set_sensitive(false);
-            add_button.set_sensitive(false);
-
-            let (sender, mut receiver) = mpsc::channel(1);
-            let symbol_value = symbol.clone();
-            runtime().spawn(async move {
-                let _ = sender.send(Stock::is_valid(&symbol_value).await).await;
-            });
-
-            let split = split.clone();
-            let navigation = navigation.clone();
-            glib::spawn_future_local({
-                let dialog = dialog.clone();
-                let settings = settings.clone();
-                let sidebar = sidebar.clone();
-                let entry = entry.clone();
-                let add_button = add_button.clone();
-                let generation = generation.clone();
-                let current = generation.get();
-                async move {
-                    let valid = receiver.recv().await.unwrap_or(false);
-
-                    entry.set_sensitive(true);
-                    add_button.set_sensitive(true);
-
-                    if generation.get() != current {
-                        return;
-                    }
-
-                    if valid {
-                        addf(&symbol, &settings, &sidebar, &split, &navigation);
-                        dialog.close();
-                    } else {
-                        entry.add_css_class("error");
-                        entry.grab_focus();
-                    }
-                }
-            });
-        }
-    });
+    header.pack_start(&button_cancel);
 
     dialog.connect_map({
-        let entry = entry.clone();
-        let add_button = add_button.clone();
-        let generation = generation.clone();
         move |_| {
-            generation.set(generation.get() + 1);
-            entry.set_sensitive(true);
-            add_button.set_sensitive(true);
-            entry.remove_css_class("error");
-            entry.grab_focus();
+            entry_row.set_text("");
+            entry_row.grab_focus();
         }
     });
 
     dialog
 }
+
+// TODO
 
 fn build_ui(app: &Application) {
     let settings = Settings::new();
@@ -528,21 +395,37 @@ fn build_ui(app: &Application) {
 
     let navigation = NavigationView::new();
 
-    let dialog = create_dialog(settings.clone(), sidebar.clone(), &split, &navigation);
-    let sidebar_page = create_sidebar(
-        &window,
-        sidebar.clone(),
-        dialog,
-        settings,
-        sender.clone(),
-        app,
-        &split,
-        &navigation,
-    );
-    let navigation_page = create_navigation_empty(navigation.clone());
+    let dialog = create_add_dialog(&settings, &sidebar);
+    let new_action = SimpleAction::new("about", None);
+    new_action.connect_activate({
+        let window = window.clone();
+        move |_, _| {
+            let about_dialog = create_about_dialog();
+            about_dialog.present(Some(&window));
+        }
+    });
+    app.add_action(&new_action);
+
+    let add_action = SimpleAction::new("add", None);
+    add_action.connect_activate({
+        let dialog = dialog.clone();
+        let window = window.clone();
+        move |_, _| {
+            dialog.present(Some(&window));
+        }
+    });
+
+    app.add_action(&add_action);
+
+    let sidebar_page = create_sidebar(&sidebar, &settings, &sender);
+    let navigation_page = create_placeholder_page();
+    navigation.add(&navigation_page);
+
+    let content_page = NavigationPage::new(&navigation, APP_NAME);
+    // content_page
 
     split.set_sidebar(Some(&sidebar_page));
-    split.set_content(Some(&navigation_page));
+    split.set_content(Some(&content_page));
 
     glib::spawn_future_local({
         let navigation = navigation.clone();
@@ -612,7 +495,7 @@ fn create_stock_page(stock: Stock) -> NavigationPage {
             move |_| {
                 let symbol = state.borrow().symbol.clone();
                 let sender = sender.clone();
-                runtime().spawn(fetch_into(symbol, range, sender));
+                runtime().spawn(Stock::fetch_and_send(symbol, range, sender));
             }
         });
 
@@ -724,4 +607,11 @@ fn draw_chart(area: &DrawingArea, cr: &Context, width: i32, height: i32, open: &
     cr.set_source_rgba(red, green, blue, 1.0);
     cr.set_line_width(2.0);
     cr.stroke().expect("stroking the chart path should succeed");
+}
+
+fn runtime() -> &'static Runtime {
+    static RUNTIME: OnceLock<Runtime> = OnceLock::new();
+    let runtime = RUNTIME.get_or_init(|| Runtime::new().unwrap());
+
+    runtime
 }

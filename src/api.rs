@@ -1,6 +1,7 @@
 use reqwest::Client;
 use serde_json::Value;
 use std::sync::OnceLock;
+use tokio::sync::mpsc::Sender;
 
 #[derive(Clone, Copy)]
 pub enum Range {
@@ -428,8 +429,10 @@ impl Stock {
         Self::parse(&text)
     }
 
-    pub async fn is_valid(symbol: &str) -> bool {
-        Self::fetch(symbol, Range::OneDay).await.is_some()
+    pub async fn fetch_and_send(symbol: String, range: Range, sender: Sender<Self>) {
+        if let Some(stock) = Self::fetch(&symbol, range).await {
+            let _ = sender.send(stock).await;
+        }
     }
 
     pub fn get_price_string(&self) -> String {

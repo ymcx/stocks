@@ -4,13 +4,14 @@ use crate::{
     settings::Settings,
 };
 use adw::{
-    AboutDialog, Application, ApplicationWindow, Bin, Breakpoint, BreakpointCondition, Dialog,
-    EntryRow, HeaderBar, NavigationPage, NavigationSplitView, NavigationView, PreferencesGroup,
-    PreferencesPage, StatusPage, ToolbarView,
+    AboutDialog, Application, ApplicationWindow, Bin, Breakpoint, BreakpointCondition,
+    BreakpointConditionLengthType, Dialog, EntryRow, HeaderBar, LengthUnit, NavigationPage,
+    NavigationSplitView, NavigationView, PreferencesGroup, PreferencesPage, StatusPage,
+    ToolbarView,
     gtk::{
         Box, Button, DragSource, DrawingArea, DropTarget, GestureClick, Label, License, ListBox,
         ListBoxRow, MenuButton, Orientation, PolicyType, PopoverMenu, ScrolledWindow,
-        SelectionMode, WidgetPaintable,
+        WidgetPaintable,
         cairo::Context,
         gdk::{ContentProvider, DragAction, Rectangle},
         gio::{Menu, SimpleAction, SimpleActionGroup},
@@ -96,12 +97,10 @@ fn create_sidebar_button(sidebar: &ListBox, bookmark: &str, settings: &Settings)
     popover_menu.set_parent(&list_box_row);
 
     let gesture_click = GestureClick::builder().button(3).build();
-    gesture_click.connect_pressed({
-        move |_, _, x, y| {
-            let rectangle = Rectangle::new(x as i32, y as i32, 120, 0);
-            popover_menu.set_pointing_to(Some(&rectangle));
-            popover_menu.popup();
-        }
+    gesture_click.connect_pressed(move |_, _, x, y| {
+        let rectangle = Rectangle::new(x as i32, y as i32, 120, 0);
+        popover_menu.set_pointing_to(Some(&rectangle));
+        popover_menu.popup();
     });
     list_box_row.add_controller(gesture_click);
 
@@ -139,11 +138,9 @@ fn create_sidebar_button(sidebar: &ListBox, bookmark: &str, settings: &Settings)
             Some(content_provider)
         }
     });
-    drag_source.connect_drag_begin({
-        move |drag_source, _| {
-            let widget_paintable = WidgetPaintable::new(Some(&row_box));
-            drag_source.set_icon(Some(&widget_paintable), -15, -15);
-        }
+    drag_source.connect_drag_begin(move |drag_source, _| {
+        let widget_paintable = WidgetPaintable::new(Some(&row_box));
+        drag_source.set_icon(Some(&widget_paintable), -15, -15);
     });
     list_box_row.add_controller(drag_source);
 
@@ -180,7 +177,7 @@ fn create_sidebar_button(sidebar: &ListBox, bookmark: &str, settings: &Settings)
     list_box_row
 }
 
-fn create_sidebar(
+fn create_sidebar_page(
     sidebar: &ListBox,
     settings: &Settings,
     sender: &Sender<Stock>,
@@ -220,8 +217,8 @@ fn create_sidebar(
                 let bookmark = bookmark.clone();
                 let sender = sender.clone();
                 let range = Range::OneMonth;
-                let stock = Stock::fetch_and_send(bookmark, range, sender);
                 let runtime = runtime();
+                let stock = Stock::fetch_and_send(bookmark, range, sender);
                 runtime.spawn(stock);
             }
         }
@@ -300,8 +297,8 @@ fn create_add_dialog(settings: &Settings, sidebar: &ListBox) -> Dialog {
 
             let (sender, mut receiver) = mpsc::channel(1);
             let range = Range::OneMonth;
-            let stock = Stock::fetch_and_send(bookmark.clone(), range, sender);
             let runtime = runtime();
+            let stock = Stock::fetch_and_send(bookmark.clone(), range, sender);
             runtime.spawn(stock);
 
             glib::spawn_future_local({
@@ -340,206 +337,105 @@ fn create_add_dialog(settings: &Settings, sidebar: &ListBox) -> Dialog {
     });
     header.pack_start(&button_cancel);
 
-    dialog.connect_map({
-        move |_| {
-            entry_row.set_text("");
-            entry_row.grab_focus();
-        }
+    dialog.connect_map(move |_| {
+        entry_row.set_text("");
+        entry_row.grab_focus();
     });
 
     dialog
 }
 
-// TODO
-
-fn build_ui(app: &Application) {
-    let settings = Settings::new();
-    let window = ApplicationWindow::builder()
-        .application(app)
-        .title(APP_NAME)
-        .default_width(settings.get_window_width())
-        .default_height(settings.get_window_height())
-        .build();
-
-    window.connect_close_request({
-        let settings = settings.clone();
-
-        move |window| {
-            let (width, height) = window.default_size();
-            settings.set_window_width(width);
-            settings.set_window_height(height);
-            settings.set_window_maximized(window.is_maximized());
-
-            Propagation::Proceed
-        }
-    });
-
-    if settings.get_window_maximized() {
-        window.maximize();
-    }
-
-    let split = NavigationSplitView::new();
-
-    let breakpoint = Breakpoint::new(
-        BreakpointCondition::parse("max-width: 550sp").expect("valid breakpoint condition"),
-    );
-    breakpoint.add_setter(&split, "collapsed", Some(&true.to_value()));
-    window.add_breakpoint(breakpoint);
-
-    let (sender, mut receiver) = mpsc::channel(1);
-
-    let sidebar = ListBox::new();
-    sidebar.add_css_class("navigation-sidebar");
-    sidebar.set_selection_mode(SelectionMode::Single);
-    sidebar.set_activate_on_single_click(true);
-
-    let navigation = NavigationView::new();
-
-    let dialog = create_add_dialog(&settings, &sidebar);
-    let new_action = SimpleAction::new("about", None);
-    new_action.connect_activate({
-        let window = window.clone();
-        move |_, _| {
-            let about_dialog = create_about_dialog();
-            about_dialog.present(Some(&window));
-        }
-    });
-    app.add_action(&new_action);
-
-    let add_action = SimpleAction::new("add", None);
-    add_action.connect_activate({
-        let dialog = dialog.clone();
-        let window = window.clone();
-        move |_, _| {
-            dialog.present(Some(&window));
-        }
-    });
-
-    app.add_action(&add_action);
-
-    let sidebar_page = create_sidebar(&sidebar, &settings, &sender);
-    let navigation_page = create_placeholder_page();
-    navigation.add(&navigation_page);
-
-    let content_page = NavigationPage::new(&navigation, APP_NAME);
-    // content_page
-
-    split.set_sidebar(Some(&sidebar_page));
-    split.set_content(Some(&content_page));
-
-    glib::spawn_future_local({
-        let navigation = navigation.clone();
-        let split = split.clone();
-        async move {
-            while let Some(stock) = receiver.recv().await {
-                navigation.replace(&[create_stock_page(stock)]);
-                split.set_show_content(true);
-            }
-        }
-    });
-
-    window.set_content(Some(&split));
-    window.present();
-
-    glib::idle_add_local_once({
-        let sidebar = sidebar.clone();
-        move || sidebar.unselect_all()
-    });
-}
-
 fn create_stock_page(stock: Stock) -> NavigationPage {
-    let state = Rc::new(RefCell::new(stock));
+    let (sender, mut receiver) = mpsc::channel(1);
+    let price = stock.get_price_string();
+    let symbol = stock.symbol.clone();
+    let stock = Rc::new(RefCell::new(stock));
 
-    let header = Box::new(Orientation::Horizontal, 12);
-    header.set_margin_top(12);
-    header.set_margin_bottom(6);
-    header.set_margin_start(12);
-    header.set_margin_end(12);
+    let toolbar_view = ToolbarView::new();
+    let navigation_page = NavigationPage::new(&toolbar_view, &symbol);
 
-    let title = Label::new(None);
-    title.set_xalign(0.0);
-    title.set_hexpand(true);
-    title.set_ellipsize(EllipsizeMode::End);
-    title.add_css_class("title-3");
+    let header_bar = HeaderBar::new();
+    toolbar_view.add_top_bar(&header_bar);
 
-    let price = Label::new(None);
-    price.set_xalign(1.0);
-    price.add_css_class("title-2");
+    let content = Box::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(0)
+        .margin_bottom(32)
+        .margin_top(32)
+        .margin_start(32)
+        .margin_end(32)
+        .build();
+    toolbar_view.set_content(Some(&content));
 
+    let header = Box::builder().orientation(Orientation::Horizontal).build();
+    content.append(&header);
+
+    let title = Label::builder()
+        .xalign(0.0)
+        .hexpand(true)
+        .css_classes(["title-2"])
+        .label(&symbol)
+        .build();
     header.append(&title);
+
+    let price = Label::builder()
+        .xalign(1.0)
+        .hexpand(true)
+        .css_classes(["title-2"])
+        .label(&price)
+        .build();
     header.append(&price);
 
     let chart = DrawingArea::builder().hexpand(true).vexpand(true).build();
     chart.set_draw_func({
-        let state = state.clone();
+        let stock = stock.clone();
         move |area, cr, width, height| {
-            draw_chart(area, cr, width, height, &state.borrow().quote_open);
+            let quote_close = &stock.borrow().quote_close;
+            draw_chart(area, cr, width, height, quote_close);
         }
     });
+    content.append(&chart);
 
-    let ranges = Box::new(Orientation::Horizontal, 6);
-    ranges.set_homogeneous(true);
-    ranges.set_margin_top(6);
-    ranges.set_margin_bottom(12);
-    ranges.set_margin_start(12);
-    ranges.set_margin_end(12);
-
-    let (sender, mut receiver) = mpsc::channel(1);
-
+    let ranges = Box::builder()
+        .orientation(Orientation::Horizontal)
+        .homogeneous(true)
+        .spacing(8)
+        .build();
     for range in Range::VALUES {
         let button = Button::builder().label(range.as_str()).build();
-
-        button.connect_clicked({
-            let state = state.clone();
+        let symbol = symbol.clone();
+        let sender = sender.clone();
+        button.connect_clicked(move |_| {
+            let symbol = symbol.clone();
             let sender = sender.clone();
-            move |_| {
-                let symbol = state.borrow().symbol.clone();
-                let sender = sender.clone();
-                runtime().spawn(Stock::fetch_and_send(symbol, range, sender));
-            }
+            let runtime = runtime();
+            let stock = Stock::fetch_and_send(symbol, range, sender);
+            runtime.spawn(stock);
         });
-
         ranges.append(&button);
     }
+    let ranges = ScrolledWindow::builder()
+        .hscrollbar_policy(PolicyType::External)
+        .vscrollbar_policy(PolicyType::Never)
+        .margin_bottom(8)
+        .margin_end(8)
+        .margin_start(8)
+        .margin_top(8)
+        .child(&ranges)
+        .build();
+    content.append(&ranges);
 
-    glib::spawn_future_local({
-        let state = state.clone();
-        let chart = chart.clone();
-        let title = title.clone();
-        let price = price.clone();
-        async move {
-            while let Some(stock) = receiver.recv().await {
-                title.set_label(&stock.symbol);
-                price.set_label(&stock.get_price_string());
-                *state.borrow_mut() = stock;
-                chart.queue_draw();
-            }
+    glib::spawn_future_local(async move {
+        while let Some(i) = receiver.recv().await {
+            *stock.borrow_mut() = i;
+            chart.queue_draw();
         }
     });
 
-    let content = Box::new(Orientation::Vertical, 0);
-
-    let ranges_scroll = ScrolledWindow::builder()
-        .hscrollbar_policy(PolicyType::External)
-        .vscrollbar_policy(PolicyType::Never)
-        .propagate_natural_height(true)
-        .child(&ranges)
-        .build();
-
-    content.append(&header);
-    content.append(&chart);
-    content.append(&ranges_scroll);
-
-    let stock = state.borrow();
-    title.set_label(&stock.symbol);
-    price.set_label(&stock.get_price_string());
-
-    let view = ToolbarView::new();
-    view.add_top_bar(&HeaderBar::new());
-    view.set_content(Some(&content));
-
-    NavigationPage::new(&view, &stock.symbol)
+    navigation_page
 }
+
+// TODO: chart
 
 fn draw_chart(area: &DrawingArea, cr: &Context, width: i32, height: i32, open: &[f64]) {
     if open.is_empty() || width <= 0 || height <= 0 {
@@ -607,6 +503,87 @@ fn draw_chart(area: &DrawingArea, cr: &Context, width: i32, height: i32, open: &
     cr.set_source_rgba(red, green, blue, 1.0);
     cr.set_line_width(2.0);
     cr.stroke().expect("stroking the chart path should succeed");
+}
+
+fn build_ui(application: &Application) {
+    let settings = Settings::new();
+    let application_window = ApplicationWindow::builder()
+        .application(application)
+        .title(APP_NAME)
+        .default_width(settings.get_window_width())
+        .default_height(settings.get_window_height())
+        .maximized(settings.get_window_maximized())
+        .build();
+
+    application_window.connect_close_request({
+        let settings = settings.clone();
+        move |application_window| {
+            let (width, height) = application_window.default_size();
+            let maximized = application_window.is_maximized();
+            settings.set_window_width(width);
+            settings.set_window_height(height);
+            settings.set_window_maximized(maximized);
+            Propagation::Proceed
+        }
+    });
+
+    let (sender, mut receiver) = mpsc::channel(1);
+
+    let split = NavigationSplitView::new();
+    application_window.set_content(Some(&split));
+
+    let sidebar = ListBox::builder()
+        .css_classes(["navigation-sidebar"])
+        .build();
+    let sidebar_page = create_sidebar_page(&sidebar, &settings, &sender);
+    split.set_sidebar(Some(&sidebar_page));
+
+    let navigation = NavigationView::new();
+    let placeholder_page = create_placeholder_page();
+    navigation.replace(&[placeholder_page]);
+    let navigation_page = NavigationPage::new(&navigation, APP_NAME);
+    split.set_content(Some(&navigation_page));
+
+    let breakpoint_condition = BreakpointCondition::new_length(
+        BreakpointConditionLengthType::MaxWidth,
+        540.0,
+        LengthUnit::Sp,
+    );
+    let breakpoint = Breakpoint::new(breakpoint_condition);
+    breakpoint.add_setter(&split, "collapsed", Some(&true.to_value()));
+    application_window.add_breakpoint(breakpoint);
+
+    let action_about = SimpleAction::new("about", None);
+    action_about.connect_activate({
+        let application_window = application_window.clone();
+        move |_, _| {
+            let about_dialog = create_about_dialog();
+            about_dialog.present(Some(&application_window));
+        }
+    });
+    application.add_action(&action_about);
+
+    let action_add_bookmark = SimpleAction::new("add", None);
+    action_add_bookmark.connect_activate({
+        let sidebar = sidebar.clone();
+        let application_window = application_window.clone();
+        move |_, _| {
+            let add_dialog = create_add_dialog(&settings, &sidebar);
+            add_dialog.present(Some(&application_window));
+        }
+    });
+    application.add_action(&action_add_bookmark);
+
+    glib::spawn_future_local(async move {
+        while let Some(stock) = receiver.recv().await {
+            let stock_page = create_stock_page(stock);
+            navigation.replace(&[stock_page]);
+            split.set_show_content(true);
+        }
+    });
+
+    application_window.present();
+    sidebar.unselect_all();
 }
 
 fn runtime() -> &'static Runtime {

@@ -223,8 +223,7 @@ fn create_sidebar_page(
                 let sender = sender.clone();
                 let range = Range::OneMonth;
                 let runtime = runtime();
-                let stock = Stock::fetch_and_send(bookmark, range, sender);
-                runtime.spawn(stock);
+                runtime.spawn(Stock::fetch_and_send(bookmark, range, sender));
             }
         }
     });
@@ -303,8 +302,7 @@ fn create_add_dialog(settings: &Settings, sidebar: &ListBox) -> Dialog {
             let (sender, mut receiver) = mpsc::channel(1);
             let range = Range::OneMonth;
             let runtime = runtime();
-            let stock = Stock::fetch_and_send(bookmark.clone(), range, sender);
-            runtime.spawn(stock);
+            runtime.spawn(Stock::fetch_and_send(bookmark.clone(), range, sender));
 
             glib::spawn_future_local({
                 let dialog = dialog.clone();
@@ -350,14 +348,151 @@ fn create_add_dialog(settings: &Settings, sidebar: &ListBox) -> Dialog {
     dialog
 }
 
+fn create_stock_page_header_title(stock: &Stock) -> Box {
+    let container = Box::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(10)
+        .build();
+
+    let title = Label::builder().label(&stock.short_name).build();
+    container.append(&title);
+
+    container
+}
+
+fn create_stock_page_header_price(stock: &Stock) -> Box {
+    let container = Box::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(10)
+        .build();
+
+    let price = Label::builder()
+        .label(stock.regular_market_price.to_string())
+        .build();
+    container.append(&price);
+
+    let currency = Label::builder().label(&stock.currency).build();
+    container.append(&currency);
+
+    let change_percent = Label::builder()
+        .label(stock.fullday_change_percent.to_string())
+        .build();
+    container.append(&change_percent);
+
+    let change = Label::builder()
+        .label(stock.fullday_change.to_string())
+        .build();
+    container.append(&change);
+
+    container
+}
+
+fn create_stock_page_header_metadata_item(label: &str, value: f64) -> Box {
+    let container = Box::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(5)
+        .build();
+
+    let label = Label::builder()
+        .css_classes(["dim-label"])
+        .label(label)
+        .build();
+    container.append(&label);
+
+    let value = Label::builder().label(value.to_string()).build();
+    container.append(&value);
+
+    container
+}
+
+fn create_stock_page_header_metadata(stock: &Stock) -> Box {
+    let container = Box::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(10)
+        .build();
+
+    let high = stock.regular_market_day_high;
+    let high = create_stock_page_header_metadata_item("High", high);
+    container.append(&high);
+
+    let low = stock.regular_market_day_low;
+    let low = create_stock_page_header_metadata_item("Low", low);
+    container.append(&low);
+
+    let volume = stock.regular_market_volume as f64;
+    let volume = create_stock_page_header_metadata_item("Volume", volume);
+    container.append(&volume);
+
+    container
+}
+
+fn create_stock_page_header(stock: &Stock) -> Box {
+    let header = Box::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(0)
+        .build();
+
+    let title = create_stock_page_header_title(stock);
+    header.append(&title);
+
+    let price = create_stock_page_header_price(stock);
+    header.append(&price);
+
+    let metadata = create_stock_page_header_metadata(stock);
+    header.append(&metadata);
+
+    header
+}
+
+fn create_stock_page_chart(state: &Rc<RefCell<Stock>>) -> DrawingArea {
+    let chart = DrawingArea::builder().hexpand(true).vexpand(true).build();
+    let state = state.clone();
+    chart.set_draw_func(move |area, cr, width, height| {
+        let quote_close = &state.borrow().quote_close;
+        draw_chart(area, cr, width, height, quote_close);
+    });
+
+    chart
+}
+
+fn create_stock_page_ranges(stock: &Stock, sender: &Sender<Stock>) -> ScrolledWindow {
+    let ranges = Box::builder()
+        .orientation(Orientation::Horizontal)
+        .homogeneous(true)
+        .spacing(8)
+        .build();
+
+    for range in Range::VALUES {
+        let symbol = stock.symbol.clone();
+        let sender = sender.clone();
+        let button = Button::builder().label(range.as_str()).build();
+        ranges.append(&button);
+
+        button.connect_clicked(move |_| {
+            let symbol = symbol.clone();
+            let sender = sender.clone();
+            let runtime = runtime();
+            runtime.spawn(Stock::fetch_and_send(symbol, range, sender));
+        });
+    }
+
+    let ranges_window = ScrolledWindow::builder()
+        .hscrollbar_policy(PolicyType::External)
+        .vscrollbar_policy(PolicyType::Never)
+        .child(&ranges)
+        .build();
+
+    ranges_window
+}
+
 fn create_stock_page(stock: Stock) -> NavigationPage {
     let (sender, mut receiver) = mpsc::channel(1);
-    let price = stock.get_price_string();
-    let symbol = stock.symbol.clone();
-    let stock = Rc::new(RefCell::new(stock));
+    let state = Rc::new(RefCell::new(stock.clone()));
+
+    let navigation_page = NavigationPage::builder().title(&stock.symbol).build();
 
     let toolbar_view = ToolbarView::new();
-    let navigation_page = NavigationPage::new(&toolbar_view, &symbol);
+    navigation_page.set_child(Some(&toolbar_view));
 
     let header_bar = HeaderBar::new();
     toolbar_view.add_top_bar(&header_bar);
@@ -372,71 +507,24 @@ fn create_stock_page(stock: Stock) -> NavigationPage {
         .build();
     toolbar_view.set_content(Some(&content));
 
-    let header = Box::builder().orientation(Orientation::Horizontal).build();
+    let header = create_stock_page_header(&stock);
     content.append(&header);
 
-    let title = Label::builder()
-        .xalign(0.0)
-        .hexpand(true)
-        .css_classes(["title-2"])
-        .label(&symbol)
-        .build();
-    header.append(&title);
-
-    let price = Label::builder()
-        .xalign(1.0)
-        .hexpand(true)
-        .css_classes(["title-2"])
-        .label(&price)
-        .build();
-    header.append(&price);
-
-    let chart = DrawingArea::builder().hexpand(true).vexpand(true).build();
-    chart.set_draw_func({
-        let stock = stock.clone();
-        move |area, cr, width, height| {
-            let quote_close = &stock.borrow().quote_close;
-            draw_chart(area, cr, width, height, quote_close);
-        }
-    });
+    let chart = create_stock_page_chart(&state);
     content.append(&chart);
 
-    let ranges = Box::builder()
-        .orientation(Orientation::Horizontal)
-        .homogeneous(true)
-        .spacing(8)
-        .build();
-    for range in Range::VALUES {
-        let button = Button::builder().label(range.as_str()).build();
-        let symbol = symbol.clone();
-        let sender = sender.clone();
-        button.connect_clicked(move |_| {
-            let symbol = symbol.clone();
-            let sender = sender.clone();
-            let runtime = runtime();
-            let stock = Stock::fetch_and_send(symbol, range, sender);
-            runtime.spawn(stock);
-        });
-        ranges.append(&button);
-    }
-    let ranges = ScrolledWindow::builder()
-        .hscrollbar_policy(PolicyType::External)
-        .vscrollbar_policy(PolicyType::Never)
-        .child(&ranges)
-        .build();
+    let ranges = create_stock_page_ranges(&stock, &sender);
     content.append(&ranges);
 
     glib::spawn_future_local(async move {
         while let Some(i) = receiver.recv().await {
-            *stock.borrow_mut() = i;
-            chart.queue_draw();
+            *state.borrow_mut() = i;
+            ranges.queue_draw();
         }
     });
 
     navigation_page
 }
-
-// TODO: chart
 
 fn get_color_scheme(is_dark_style: bool) -> Vec<(f64, f64, f64)> {
     let color_scheme = if is_dark_style {
@@ -525,8 +613,8 @@ fn draw_chart(_area: &DrawingArea, cr: &Context, width: i32, height: i32, quote:
     let first = coordinates[0];
     let last = coordinates[coordinates.len() - 1];
 
-    let is_dark_style = StyleManager::default().is_dark();
-    let color_scheme = get_color_scheme(is_dark_style);
+    let is_dark = StyleManager::default().is_dark();
+    let color_scheme = get_color_scheme(is_dark);
     let blue = color_scheme[0];
     let _red = color_scheme[1];
 

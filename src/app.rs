@@ -1,19 +1,20 @@
 use crate::{
     APP_ID, APP_NAME, APP_VERSION,
     api::{Range, Stock},
+    color::ColorScheme,
     settings::Settings,
 };
 use adw::{
     AboutDialog, Application, ApplicationWindow, Bin, Breakpoint, BreakpointCondition,
     BreakpointConditionLengthType, Dialog, EntryRow, HeaderBar, LengthUnit, NavigationPage,
     NavigationSplitView, NavigationView, PreferencesGroup, PreferencesPage, StatusPage,
-    StyleManager, ToolbarView,
+    ToolbarView,
     gtk::{
         Box, Button, DragSource, DrawingArea, DropTarget, GestureClick, Label, License, ListBox,
         ListBoxRow, MenuButton, Orientation, PolicyType, PopoverMenu, ScrolledWindow,
         WidgetPaintable,
         cairo::{Context, FontSlant, FontWeight, LinearGradient},
-        gdk::{ContentProvider, DragAction, RGBA, Rectangle},
+        gdk::{ContentProvider, DragAction, Rectangle},
         gio::{Menu, SimpleAction, SimpleActionGroup},
         glib::{self, ExitCode, Propagation},
         pango::EllipsizeMode,
@@ -366,22 +367,23 @@ fn create_stock_page_header_price(stock: &Stock) -> Box {
         .spacing(10)
         .build();
 
-    let price = Label::builder()
-        .label(stock.regular_market_price.to_string())
-        .build();
+    let color_scheme = ColorScheme::new();
+    let color = color_scheme.change(stock.fullday_change).as_attrs();
+
+    let price = stock.regular_market_price.to_string();
+    let price = Label::builder().label(price).build();
     container.append(&price);
 
-    let currency = Label::builder().label(&stock.currency).build();
+    let currency = &stock.currency;
+    let currency = Label::builder().label(currency).build();
     container.append(&currency);
 
-    let change_percent = Label::builder()
-        .label(stock.fullday_change_percent.to_string())
-        .build();
-    container.append(&change_percent);
+    let percent = format!("{:.2}%", stock.fullday_change_percent);
+    let percent = Label::builder().attributes(&color).label(percent).build();
+    container.append(&percent);
 
-    let change = Label::builder()
-        .label(stock.fullday_change.to_string())
-        .build();
+    let change = format!("({})", stock.fullday_change);
+    let change = Label::builder().attributes(&color).label(change).build();
     container.append(&change);
 
     container
@@ -393,10 +395,10 @@ fn create_stock_page_header_metadata_item(label: &str, value: f64) -> Box {
         .spacing(5)
         .build();
 
-    let label = Label::builder()
-        .css_classes(["dim-label"])
-        .label(label)
-        .build();
+    let color_scheme = ColorScheme::new();
+    let color = color_scheme.foreground_dim.as_attrs();
+
+    let label = Label::builder().attributes(&color).label(label).build();
     container.append(&label);
 
     let value = Label::builder().label(value.to_string()).build();
@@ -429,7 +431,9 @@ fn create_stock_page_header_metadata(stock: &Stock) -> Box {
 fn create_stock_page_header(stock: &Stock) -> Box {
     let header = Box::builder()
         .orientation(Orientation::Vertical)
-        .spacing(0)
+        .spacing(8)
+        .margin_start(16)
+        .margin_end(16)
         .build();
 
     let title = create_stock_page_header_title(stock);
@@ -479,6 +483,8 @@ fn create_stock_page_ranges(stock: &Stock, sender: &Sender<Stock>) -> ScrolledWi
     let ranges_window = ScrolledWindow::builder()
         .hscrollbar_policy(PolicyType::External)
         .vscrollbar_policy(PolicyType::Never)
+        .margin_start(16)
+        .margin_end(16)
         .child(&ranges)
         .build();
 
@@ -499,11 +505,9 @@ fn create_stock_page(stock: Stock) -> NavigationPage {
 
     let content = Box::builder()
         .orientation(Orientation::Vertical)
-        .spacing(0)
-        .margin_bottom(32)
+        .spacing(32)
         .margin_top(32)
-        .margin_start(32)
-        .margin_end(32)
+        .margin_bottom(32)
         .build();
     toolbar_view.set_content(Some(&content));
 
@@ -519,30 +523,11 @@ fn create_stock_page(stock: Stock) -> NavigationPage {
     glib::spawn_future_local(async move {
         while let Some(i) = receiver.recv().await {
             *state.borrow_mut() = i;
-            ranges.queue_draw();
+            chart.queue_draw();
         }
     });
 
     navigation_page
-}
-
-fn get_color_scheme(is_dark_style: bool) -> Vec<(f64, f64, f64)> {
-    let color_scheme = if is_dark_style {
-        let blue = "#00efe0";
-        let red = "#e51665";
-        [blue, red]
-    } else {
-        let blue = "#1c7a92";
-        let red = "#e51665";
-        [blue, red]
-    };
-    let color_scheme = color_scheme
-        .into_iter()
-        .map(|i| RGBA::parse(i).unwrap())
-        .map(|i| (i.red() as f64, i.green() as f64, i.blue() as f64))
-        .collect();
-
-    color_scheme
 }
 
 fn get_quote_levels_step(estimate: f64) -> f64 {
@@ -613,10 +598,9 @@ fn draw_chart(_area: &DrawingArea, cr: &Context, width: i32, height: i32, quote:
     let first = coordinates[0];
     let last = coordinates[coordinates.len() - 1];
 
-    let is_dark = StyleManager::default().is_dark();
-    let color_scheme = get_color_scheme(is_dark);
-    let blue = color_scheme[0];
-    let _red = color_scheme[1];
+    let color_scheme = ColorScheme::new();
+    let foreground_dim = color_scheme.foreground_dim.as_f64();
+    let blue = color_scheme.blue.as_f64();
 
     cr.move_to(first.0, height);
     for &(x, y) in &coordinates {
@@ -639,13 +623,13 @@ fn draw_chart(_area: &DrawingArea, cr: &Context, width: i32, height: i32, quote:
     cr.stroke().unwrap();
 
     let (levels, decimals) = get_quote_levels(min, max);
-    let text = format!("{:.decimals$}", levels[0]);
+    let text = format!("{:.decimals$}", levels[levels.len() - 1]);
     let extents = cr.text_extents(&text).unwrap();
     for level in levels {
         let x = width - extents.width() - 20.0;
         let y = height - (level - min) / span * height;
         let text = format!("{:.decimals$}", level);
-        cr.set_source_rgba(1.0, 1.0, 1.0, 0.6);
+        cr.set_source_rgba(foreground_dim.0, foreground_dim.1, foreground_dim.2, 1.0);
         cr.select_font_face("Adwaita Sans", FontSlant::Normal, FontWeight::Normal);
         cr.set_font_size(16.0);
         cr.move_to(x, y);

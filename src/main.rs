@@ -2,6 +2,7 @@ use adw::gtk::{gio, glib::ExitCode};
 
 mod api;
 mod app;
+mod color;
 mod settings;
 
 const APP_VERSION: &str = "0.1.0";

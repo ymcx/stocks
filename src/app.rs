@@ -349,100 +349,99 @@ fn create_add_dialog(settings: &Settings, sidebar: &ListBox) -> Dialog {
     dialog
 }
 
-fn create_stock_page_header_title(stock: &Stock) -> Box {
-    let container = Box::builder()
-        .orientation(Orientation::Horizontal)
-        .spacing(10)
-        .build();
+fn create_stock_page_header_title(stock: &Stock, color_scheme: &ColorScheme) -> Box {
+    let container = Box::builder().build();
 
-    let title = Label::builder().label(&stock.short_name).build();
+    let color = color_scheme.foreground.as_attrs(true, Some(24));
+    let title = stock.short_name.to_string();
+    let title = Label::builder().attributes(&color).label(title).build();
     container.append(&title);
 
     container
 }
 
-fn create_stock_page_header_price(stock: &Stock) -> Box {
+fn create_stock_page_header_price(stock: &Stock, color_scheme: &ColorScheme) -> Box {
     let container = Box::builder()
         .orientation(Orientation::Horizontal)
-        .spacing(10)
+        .spacing(16)
         .build();
 
-    let color_scheme = ColorScheme::new();
-    let color = color_scheme.change(stock.fullday_change).as_attrs();
-
-    let price = stock.regular_market_price.to_string();
-    let price = Label::builder().label(price).build();
+    let color = color_scheme.foreground.as_attrs(true, Some(16));
+    let price = format!("{} {}", stock.regular_market_price, stock.currency);
+    let price = Label::builder().attributes(&color).label(price).build();
     container.append(&price);
 
-    let currency = &stock.currency;
-    let currency = Label::builder().label(currency).build();
-    container.append(&currency);
-
-    let percent = format!("{:.2}%", stock.fullday_change_percent);
-    let percent = Label::builder().attributes(&color).label(percent).build();
-    container.append(&percent);
-
-    let change = format!("({})", stock.fullday_change);
+    let color = color_scheme
+        .change(stock.fullday_change)
+        .as_attrs(true, Some(16));
+    let change = format!(
+        "{:.2}% ({})",
+        stock.fullday_change_percent, stock.fullday_change
+    );
     let change = Label::builder().attributes(&color).label(change).build();
     container.append(&change);
 
     container
 }
 
-fn create_stock_page_header_metadata_item(label: &str, value: f64) -> Box {
+fn create_stock_page_header_metadata_item(
+    label: &str,
+    value: f64,
+    color_scheme: &ColorScheme,
+) -> Box {
     let container = Box::builder()
         .orientation(Orientation::Horizontal)
-        .spacing(5)
+        .spacing(4)
         .build();
 
-    let color_scheme = ColorScheme::new();
-    let color = color_scheme.foreground_dim.as_attrs();
-
+    let color = color_scheme.foreground_dim.as_attrs(false, Some(12));
     let label = Label::builder().attributes(&color).label(label).build();
     container.append(&label);
 
-    let value = Label::builder().label(value.to_string()).build();
+    let color = color_scheme.foreground.as_attrs(true, Some(12));
+    let value = value.to_string();
+    let value = Label::builder().attributes(&color).label(value).build();
     container.append(&value);
 
     container
 }
 
-fn create_stock_page_header_metadata(stock: &Stock) -> Box {
+fn create_stock_page_header_metadata(stock: &Stock, color_scheme: &ColorScheme) -> Box {
     let container = Box::builder()
         .orientation(Orientation::Horizontal)
-        .spacing(10)
+        .spacing(16)
         .build();
 
     let high = stock.regular_market_day_high;
-    let high = create_stock_page_header_metadata_item("High", high);
+    let high = create_stock_page_header_metadata_item("High", high, color_scheme);
     container.append(&high);
 
     let low = stock.regular_market_day_low;
-    let low = create_stock_page_header_metadata_item("Low", low);
+    let low = create_stock_page_header_metadata_item("Low", low, color_scheme);
     container.append(&low);
 
     let volume = stock.regular_market_volume as f64;
-    let volume = create_stock_page_header_metadata_item("Volume", volume);
+    let volume = create_stock_page_header_metadata_item("Volume", volume, color_scheme);
     container.append(&volume);
 
     container
 }
 
-fn create_stock_page_header(stock: &Stock) -> Box {
+fn create_stock_page_header(stock: &Stock, color_scheme: &ColorScheme) -> Box {
     let header = Box::builder()
         .orientation(Orientation::Vertical)
-        .spacing(8)
+        .spacing(12)
         .margin_start(16)
         .margin_end(16)
         .build();
 
-    let title = create_stock_page_header_title(stock);
+    let title = create_stock_page_header_title(stock, color_scheme);
     header.append(&title);
 
-    let price = create_stock_page_header_price(stock);
+    let price = create_stock_page_header_price(stock, color_scheme);
     header.append(&price);
 
-    let metadata = create_stock_page_header_metadata(stock);
+    let metadata = create_stock_page_header_metadata(stock, &color_scheme);
     header.append(&metadata);
 
     header
@@ -494,6 +493,7 @@ fn create_stock_page_ranges(stock: &Stock, sender: &Sender<Stock>) -> ScrolledWi
 fn create_stock_page(stock: Stock) -> NavigationPage {
     let (sender, mut receiver) = mpsc::channel(1);
     let state = Rc::new(RefCell::new(stock.clone()));
+    let color_scheme = ColorScheme::new();
 
     let navigation_page = NavigationPage::builder().title(&stock.symbol).build();
 
@@ -511,7 +511,7 @@ fn create_stock_page(stock: Stock) -> NavigationPage {
         .build();
     toolbar_view.set_content(Some(&content));
 
-    let header = create_stock_page_header(&stock);
+    let header = create_stock_page_header(&stock, &color_scheme);
     content.append(&header);
 
     let chart = create_stock_page_chart(&state);

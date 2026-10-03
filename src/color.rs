@@ -2,7 +2,7 @@ use adw::{
     StyleManager,
     gtk::{
         gdk::RGBA,
-        pango::{AttrColor, AttrList},
+        pango::{AttrColor, AttrInt, AttrList, AttrSize, SCALE, Weight},
     },
 };
 
@@ -35,11 +35,21 @@ impl Color {
         (red, green, blue)
     }
 
-    pub fn as_attrs(&self) -> AttrList {
+    pub fn as_attrs(&self, bold: bool, size: Option<i32>) -> AttrList {
         let color = self.as_u16();
         let attr = AttrColor::new_foreground(color.0, color.1, color.2);
         let attrs = AttrList::new();
         attrs.insert(attr);
+
+        if bold {
+            let attr = AttrInt::new_weight(Weight::Bold);
+            attrs.insert(attr);
+        }
+
+        if let Some(size) = size {
+            let attr = AttrSize::new(size * SCALE);
+            attrs.insert(attr);
+        }
 
         attrs
     }

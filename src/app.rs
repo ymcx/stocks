@@ -12,7 +12,7 @@ use adw::{
         Box, Button, DragSource, DrawingArea, DropTarget, GestureClick, Label, License, ListBox,
         ListBoxRow, MenuButton, Orientation, PolicyType, PopoverMenu, ScrolledWindow,
         WidgetPaintable,
-        cairo::{Context, LinearGradient},
+        cairo::{Context, FontSlant, FontWeight, LinearGradient},
         gdk::{ContentProvider, DragAction, RGBA, Rectangle},
         gio::{Menu, SimpleAction, SimpleActionGroup},
         glib::{self, ExitCode, Propagation},
@@ -457,6 +457,49 @@ fn get_color_scheme(is_dark_style: bool) -> Vec<(f64, f64, f64)> {
     color_scheme
 }
 
+fn get_quote_levels_step(estimate: f64) -> f64 {
+    let magnitude = 10f64.powf(estimate.log10().floor());
+    let normalized = estimate / magnitude;
+    let step = if normalized < 1.5 {
+        1.0
+    } else if normalized < 3.0 {
+        2.0
+    } else if normalized < 7.0 {
+        5.0
+    } else {
+        10.0
+    };
+
+    step * magnitude
+}
+
+fn get_decimals_for_step(step: f64) -> usize {
+    let mut i = step;
+    let mut decimals = 0;
+    while i != i.round() {
+        i *= 10.0;
+        decimals += 1;
+    }
+
+    decimals
+}
+
+fn get_quote_levels(min: f64, max: f64) -> (Vec<f64>, usize) {
+    let step_estimate = (max - min) / 6.0;
+    let step = get_quote_levels_step(step_estimate);
+
+    let mut levels = Vec::new();
+    let mut i = (min / step).ceil() * step;
+    while i <= max {
+        levels.push(i);
+        i += step;
+    }
+
+    let decimals = get_decimals_for_step(step);
+
+    (levels, decimals)
+}
+
 fn draw_chart(_area: &DrawingArea, cr: &Context, width: i32, height: i32, quote: &Vec<f64>) {
     if quote.len() == 0 || width == 0 || height == 0 {
         return;
@@ -506,6 +549,20 @@ fn draw_chart(_area: &DrawingArea, cr: &Context, width: i32, height: i32, quote:
     cr.set_source_rgba(blue.0, blue.1, blue.2, 1.0);
     cr.set_line_width(2.0);
     cr.stroke().unwrap();
+
+    let (levels, decimals) = get_quote_levels(min, max);
+    let text = format!("{:.decimals$}", levels[0]);
+    let extents = cr.text_extents(&text).unwrap();
+    for level in levels {
+        let x = width - extents.width() - 20.0;
+        let y = height - (level - min) / span * height;
+        let text = format!("{:.decimals$}", level);
+        cr.set_source_rgba(1.0, 1.0, 1.0, 0.6);
+        cr.select_font_face("Adwaita Sans", FontSlant::Normal, FontWeight::Normal);
+        cr.set_font_size(16.0);
+        cr.move_to(x, y);
+        cr.show_text(&text).unwrap();
+    }
 }
 
 fn build_ui(application: &Application) {

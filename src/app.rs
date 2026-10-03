@@ -7,20 +7,25 @@ use adw::{
     AboutDialog, Application, ApplicationWindow, Bin, Breakpoint, BreakpointCondition,
     BreakpointConditionLengthType, Dialog, EntryRow, HeaderBar, LengthUnit, NavigationPage,
     NavigationSplitView, NavigationView, PreferencesGroup, PreferencesPage, StatusPage,
-    ToolbarView,
+    StyleManager, ToolbarView,
     gtk::{
         Box, Button, DragSource, DrawingArea, DropTarget, GestureClick, Label, License, ListBox,
         ListBoxRow, MenuButton, Orientation, PolicyType, PopoverMenu, ScrolledWindow,
         WidgetPaintable,
-        cairo::Context,
-        gdk::{ContentProvider, DragAction, Rectangle},
+        cairo::{Context, LinearGradient},
+        gdk::{ContentProvider, DragAction, RGBA, Rectangle},
         gio::{Menu, SimpleAction, SimpleActionGroup},
         glib::{self, ExitCode, Propagation},
         pango::EllipsizeMode,
     },
     prelude::*,
 };
-use std::{cell::RefCell, rc::Rc, sync::OnceLock};
+use std::{
+    cell::RefCell,
+    f64::{INFINITY, NEG_INFINITY},
+    rc::Rc,
+    sync::OnceLock,
+};
 use tokio::{
     runtime::Runtime,
     sync::mpsc::{self, Sender},
@@ -417,10 +422,6 @@ fn create_stock_page(stock: Stock) -> NavigationPage {
     let ranges = ScrolledWindow::builder()
         .hscrollbar_policy(PolicyType::External)
         .vscrollbar_policy(PolicyType::Never)
-        .margin_bottom(8)
-        .margin_end(8)
-        .margin_start(8)
-        .margin_top(8)
         .child(&ranges)
         .build();
     content.append(&ranges);
@@ -437,72 +438,74 @@ fn create_stock_page(stock: Stock) -> NavigationPage {
 
 // TODO: chart
 
-fn draw_chart(area: &DrawingArea, cr: &Context, width: i32, height: i32, open: &[f64]) {
-    if open.is_empty() || width <= 0 || height <= 0 {
+fn get_color_scheme(is_dark_style: bool) -> Vec<(f64, f64, f64)> {
+    let color_scheme = if is_dark_style {
+        let blue = "#00efe0";
+        let red = "#e51665";
+        [blue, red]
+    } else {
+        let blue = "#1c7a92";
+        let red = "#e51665";
+        [blue, red]
+    };
+    let color_scheme = color_scheme
+        .into_iter()
+        .map(|i| RGBA::parse(i).unwrap())
+        .map(|i| (i.red() as f64, i.green() as f64, i.blue() as f64))
+        .collect();
+
+    color_scheme
+}
+
+fn draw_chart(_area: &DrawingArea, cr: &Context, width: i32, height: i32, quote: &Vec<f64>) {
+    if quote.len() == 0 || width == 0 || height == 0 {
         return;
     }
 
-    let width = f64::from(width);
-    let height = f64::from(height);
-    let padding = 8.0;
-    let chart_width = width - 2.0 * padding;
-    let chart_height = height - 2.0 * padding;
+    let width = width as f64;
+    let height = height as f64;
+    let step = width / usize::max(quote.len() - 1, 1) as f64;
 
-    if chart_width <= 0.0 || chart_height <= 0.0 {
-        return;
-    }
-
-    let min = open.iter().copied().fold(f64::INFINITY, f64::min);
-    let max = open.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let min = quote.iter().copied().fold(INFINITY, f64::min);
+    let max = quote.iter().copied().fold(NEG_INFINITY, f64::max);
     let span = max - min;
 
-    let step = if open.len() > 1 {
-        chart_width / (open.len() - 1) as f64
-    } else {
-        0.0
-    };
-
-    let coords: Vec<(f64, f64)> = open
+    let coordinates: Vec<(f64, f64)> = quote
         .iter()
         .enumerate()
-        .map(|(index, &value)| {
-            let x = padding + index as f64 * step;
-            let y = if span > 0.0 {
-                padding + (1.0 - (value - min) / span) * chart_height
-            } else {
-                padding + chart_height / 2.0
-            };
+        .map(|(i, &value)| {
+            let x = step * i as f64;
+            let y = height - (value - min) / span * height;
             (x, y)
         })
         .collect();
+    let first = coordinates[0];
+    let last = coordinates[coordinates.len() - 1];
 
-    let first = coords[0];
-    let last = coords[coords.len() - 1];
-    let baseline = height - padding;
+    let is_dark_style = StyleManager::default().is_dark();
+    let color_scheme = get_color_scheme(is_dark_style);
+    let blue = color_scheme[0];
+    let _red = color_scheme[1];
 
-    let color = area.color();
-    let (red, green, blue) = (
-        f64::from(color.red()),
-        f64::from(color.green()),
-        f64::from(color.blue()),
-    );
-
-    cr.move_to(first.0, baseline);
-    for &(x, y) in &coords {
+    cr.move_to(first.0, height);
+    for &(x, y) in &coordinates {
         cr.line_to(x, y);
     }
-    cr.line_to(last.0, baseline);
+    cr.line_to(last.0, height);
     cr.close_path();
-    cr.set_source_rgba(red, green, blue, 0.15);
-    cr.fill().expect("filling the chart path should succeed");
+    let gradient = LinearGradient::new(0.0, 0.0, 0.0, height);
+    gradient.add_color_stop_rgba(0.0, blue.0, blue.1, blue.2, 0.1);
+    gradient.add_color_stop_rgba(1.0, blue.0, blue.1, blue.2, 0.0);
+    cr.set_source(gradient).unwrap();
+    cr.fill().unwrap();
 
     cr.move_to(first.0, first.1);
-    for &(x, y) in &coords[1..] {
+    for &(x, y) in &coordinates[1..] {
         cr.line_to(x, y);
     }
-    cr.set_source_rgba(red, green, blue, 1.0);
+    cr.set_source_rgba(blue.0, blue.1, blue.2, 1.0);
     cr.set_line_width(2.0);
-    cr.stroke().expect("stroking the chart path should succeed");
+    cr.stroke().unwrap();
 }
 
 fn build_ui(application: &Application) {

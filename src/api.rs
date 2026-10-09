@@ -4,10 +4,11 @@ use std::sync::OnceLock;
 use tokio::sync::mpsc::Sender;
 
 #[allow(dead_code)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub enum Range {
     OneDay,
     FiveDays,
+    #[default]
     OneMonth,
     ThreeMonths,
     SixMonths,

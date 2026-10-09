@@ -26,6 +26,18 @@ impl Settings {
             .unwrap();
     }
 
+    pub fn set_last_stock(&self, stock: &str) {
+        self.settings
+            .set_string("last-stock", stock)
+            .unwrap();
+    }
+
+    pub fn set_last_range(&self, range: &str) {
+        self.settings
+            .set_string("last-range", range)
+            .unwrap();
+    }
+
     pub fn get_window_width(&self) -> i32 {
         self.settings.int("window-width")
     }
@@ -38,12 +50,25 @@ impl Settings {
         self.settings.boolean("window-maximized")
     }
 
+    pub fn get_last_stock(&self) -> String {
+        self.settings.string("last-stock").to_string()
+    }
+
+    pub fn get_last_range(&self) -> String {
+        self.settings.string("last-range").to_string()
+    }
+
     pub fn get_bookmarks(&self) -> Vec<String> {
         self.settings
             .strv("bookmarks")
             .into_iter()
             .map(|i| i.to_string())
             .collect()
+    }
+
+    pub fn find_bookmark(&self, bookmark: &str) -> Option<usize> {
+        let bookmarks = self.get_bookmarks();
+        bookmarks.into_iter().position(|i| i == bookmark)
     }
 
     pub fn set_bookmarks(&self, bookmarks: Vec<String>) {

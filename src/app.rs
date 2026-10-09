@@ -27,8 +27,6 @@ use tokio::{
     sync::mpsc::{self, Sender},
 };
 
-// TODO: save range in settings
-
 pub fn run() -> ExitCode {
     let app = Application::builder().application_id(APP_ID).build();
     app.connect_activate(build_ui);
@@ -182,6 +180,7 @@ fn create_sidebar_page(
     sidebar: &ListBox,
     settings: &Settings,
     sender: &Sender<Stock>,
+    range_default: &Rc<RefCell<Range>>,
 ) -> NavigationPage {
     let toolbar_view = ToolbarView::new();
 
@@ -211,15 +210,16 @@ fn create_sidebar_page(
     sidebar.connect_row_activated({
         let sender = sender.clone();
         let settings = settings.clone();
+        let range_default = range_default.clone();
         move |_, list_box_row| {
             let bookmarks = settings.get_bookmarks();
             let index = list_box_row.index() as usize;
             if let Some(bookmark) = bookmarks.get(index) {
                 let bookmark = bookmark.clone();
                 let sender = sender.clone();
-                let range = Range::OneMonth;
+                let range_default = *range_default.borrow();
                 let runtime = runtime();
-                runtime.spawn(Stock::fetch_and_send(bookmark, range, sender));
+                runtime.spawn(Stock::fetch_and_send(bookmark, range_default, sender));
             }
         }
     });
@@ -453,7 +453,11 @@ fn create_stock_page_chart(state: &Rc<RefCell<Stock>>) -> DrawingArea {
     chart
 }
 
-fn create_stock_page_ranges(stock: &Stock, sender: &Sender<Stock>) -> ScrolledWindow {
+fn create_stock_page_ranges(
+    stock: &Stock,
+    sender: &Sender<Stock>,
+    range_default: &Rc<RefCell<Range>>,
+) -> ScrolledWindow {
     let ranges = Box::builder()
         .orientation(Orientation::Horizontal)
         .homogeneous(true)
@@ -475,7 +479,9 @@ fn create_stock_page_ranges(stock: &Stock, sender: &Sender<Stock>) -> ScrolledWi
         let button = Button::builder().label(range.as_str()).build();
         ranges.append(&button);
 
+        let range_default = range_default.clone();
         button.connect_clicked(move |_| {
+            *range_default.borrow_mut() = range;
             let symbol = symbol.clone();
             let sender = sender.clone();
             let runtime = runtime();
@@ -494,7 +500,7 @@ fn create_stock_page_ranges(stock: &Stock, sender: &Sender<Stock>) -> ScrolledWi
     ranges_window
 }
 
-fn create_stock_page(stock: Stock) -> NavigationPage {
+fn create_stock_page(stock: Stock, range_default: &Rc<RefCell<Range>>) -> NavigationPage {
     let (sender, mut receiver) = mpsc::channel(1);
     let state = Rc::new(RefCell::new(stock.clone()));
     let color_scheme = ColorScheme::new();
@@ -521,12 +527,12 @@ fn create_stock_page(stock: Stock) -> NavigationPage {
     let chart = create_stock_page_chart(&state);
     content.append(&chart);
 
-    let ranges = create_stock_page_ranges(&stock, &sender);
+    let ranges = create_stock_page_ranges(&stock, &sender, range_default);
     content.append(&ranges);
 
     glib::spawn_future_local(async move {
-        while let Some(i) = receiver.recv().await {
-            *state.borrow_mut() = i;
+        while let Some(stock) = receiver.recv().await {
+            *state.borrow_mut() = stock;
             chart.queue_draw();
         }
     });
@@ -651,14 +657,30 @@ fn build_ui(application: &Application) {
         .maximized(settings.get_window_maximized())
         .build();
 
+    let last_stock = settings.get_last_stock();
+    let last_range = Range::parse(&settings.get_last_range()).unwrap_or_default();
+    let symbol_default = Rc::new(RefCell::new(last_stock.clone()));
+    let range_default = Rc::new(RefCell::new(last_range));
+
     application_window.connect_close_request({
         let settings = settings.clone();
+        let symbol_default = symbol_default.clone();
+        let range_default = range_default.clone();
+
         move |application_window| {
             let (width, height) = application_window.default_size();
             let maximized = application_window.is_maximized();
+            let symbol_default = symbol_default.borrow();
+            let symbol_default = symbol_default.as_str();
+            let range_default = range_default.borrow();
+            let range_default = range_default.as_api_str();
+
             settings.set_window_width(width);
             settings.set_window_height(height);
             settings.set_window_maximized(maximized);
+            settings.set_last_stock(symbol_default);
+            settings.set_last_range(range_default);
+
             Propagation::Proceed
         }
     });
@@ -671,14 +693,36 @@ fn build_ui(application: &Application) {
     let sidebar = ListBox::builder()
         .css_classes(["navigation-sidebar"])
         .build();
-    let sidebar_page = create_sidebar_page(&sidebar, &settings, &sender);
+    let sidebar_page = create_sidebar_page(&sidebar, &settings, &sender, &range_default);
     split.set_sidebar(Some(&sidebar_page));
 
     let navigation = NavigationView::new();
     let placeholder_page = create_placeholder_page();
-    navigation.replace(&[placeholder_page]);
+    navigation.push(&placeholder_page);
     let navigation_page = NavigationPage::new(&navigation, APP_NAME);
     split.set_content(Some(&navigation_page));
+
+    navigation.connect_popped({
+        let settings = settings.clone();
+        let sidebar = sidebar.clone();
+        let symbol_default = symbol_default.clone();
+        move |navigation, _| {
+            let Some(visible_page) = navigation.visible_page() else {
+                return;
+            };
+
+            if visible_page == placeholder_page {
+                *symbol_default.borrow_mut() = String::new();
+                sidebar.unselect_all();
+            } else {
+                let symbol = visible_page.title().to_string();
+                *symbol_default.borrow_mut() = symbol.clone();
+                if let Some(index) = settings.find_bookmark(&symbol) {
+                    sidebar.select_row(sidebar.row_at_index(index as i32).as_ref());
+                }
+            }
+        }
+    });
 
     let breakpoint_condition = BreakpointCondition::new_length(
         BreakpointConditionLengthType::MaxWidth,
@@ -701,6 +745,7 @@ fn build_ui(application: &Application) {
 
     let action_add_bookmark = SimpleAction::new("add", None);
     action_add_bookmark.connect_activate({
+        let settings = settings.clone();
         let sidebar = sidebar.clone();
         let application_window = application_window.clone();
         move |_, _| {
@@ -710,11 +755,25 @@ fn build_ui(application: &Application) {
     });
     application.add_action(&action_add_bookmark);
 
-    glib::spawn_future_local(async move {
-        while let Some(stock) = receiver.recv().await {
-            let stock_page = create_stock_page(stock);
-            navigation.replace(&[stock_page]);
-            split.set_show_content(true);
+    if !last_stock.is_empty() {
+        let runtime = runtime();
+        runtime.spawn(Stock::fetch_and_send(last_stock, last_range, sender));
+    }
+
+    glib::spawn_future_local({
+        let sidebar = sidebar.clone();
+        async move {
+            while let Some(stock) = receiver.recv().await {
+                let symbol = stock.symbol.clone();
+                *symbol_default.borrow_mut() = symbol.clone();
+
+                let stock_page = create_stock_page(stock, &range_default);
+                navigation.push(&stock_page);
+
+                if let Some(index) = settings.find_bookmark(&symbol) {
+                    sidebar.select_row(sidebar.row_at_index(index as i32).as_ref());
+                }
+            }
         }
     });
 

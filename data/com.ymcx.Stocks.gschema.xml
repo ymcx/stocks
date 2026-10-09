@@ -13,5 +13,11 @@
     <key name="window-maximized" type="b">
       <default>false</default>
     </key>
+    <key name="last-stock" type="s">
+      <default>"1mo"</default>
+    </key>
+    <key name="last-range" type="s">
+      <default>""</default>
+    </key>
   </schema>
 </schemalist>

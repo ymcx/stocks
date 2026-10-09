@@ -21,7 +21,8 @@ use adw::{
     },
     prelude::*,
 };
-use std::{cell::RefCell, rc::Rc, sync::OnceLock};
+use gtk::EventControllerMotion;
+use std::{cell::RefCell, f64::consts::PI, rc::Rc, sync::OnceLock};
 use tokio::{
     runtime::Runtime,
     sync::mpsc::{self, Sender},
@@ -443,11 +444,29 @@ fn create_stock_page_header(stock: &Stock, color_scheme: &ColorScheme) -> Box {
 }
 
 fn create_stock_page_chart(state: &Rc<RefCell<Stock>>) -> DrawingArea {
-    let chart = DrawingArea::builder().hexpand(true).vexpand(true).build();
-    let state = state.clone();
-    chart.set_draw_func(move |area, cr, width, height| {
-        let quote_close = &state.borrow().quote_close;
-        draw_chart(area, cr, width, height, quote_close);
+    let chart = DrawingArea::builder().vexpand(true).hexpand(true).build();
+    let cursor = Rc::new(RefCell::new(None));
+    let motion = EventControllerMotion::new();
+    chart.add_controller(motion.clone());
+
+    let chart_value = chart.clone();
+    let cursor_value = cursor.clone();
+    motion.connect_motion(move |_, x, y| {
+        *cursor_value.borrow_mut() = Some((x, y));
+        chart_value.queue_draw();
+    });
+
+    let chart_value = chart.clone();
+    let cursor_value = cursor.clone();
+    motion.connect_leave(move |_| {
+        *cursor_value.borrow_mut() = None;
+        chart_value.queue_draw();
+    });
+
+    let state_value = state.clone();
+    chart.set_draw_func(move |_, cr, width, height| {
+        let quote_close = &state_value.borrow().quote_close;
+        draw_chart(cr, width, height, quote_close, &cursor);
     });
 
     chart
@@ -583,7 +602,13 @@ fn get_quote_levels(min: f64, max: f64) -> (Vec<f64>, usize) {
     (levels, decimals)
 }
 
-fn draw_chart(_area: &DrawingArea, cr: &Context, width: i32, height: i32, quote: &Vec<f64>) {
+fn draw_chart(
+    cr: &Context,
+    width: i32,
+    height: i32,
+    quote: &Vec<f64>,
+    cursor: &Rc<RefCell<Option<(f64, f64)>>>,
+) {
     if quote.len() == 0 || width == 0 || height == 0 {
         return;
     }
@@ -609,6 +634,7 @@ fn draw_chart(_area: &DrawingArea, cr: &Context, width: i32, height: i32, quote:
     let last = coordinates[coordinates.len() - 1];
 
     let color_scheme = ColorScheme::new();
+    let foreground = color_scheme.foreground.as_f64();
     let foreground_dim = color_scheme.foreground_dim.as_f64();
     let blue = color_scheme.blue.as_f64();
 
@@ -645,6 +671,27 @@ fn draw_chart(_area: &DrawingArea, cr: &Context, width: i32, height: i32, quote:
         cr.move_to(x, y);
         cr.show_text(&text).unwrap();
     }
+
+    let Some((x, y)) = cursor.borrow().and_then(|(x, _)| {
+        let y = coordinates.iter().find(|&&(i, _)| x < i).map(|&(_, j)| j)?;
+        Some((x, y))
+    }) else {
+        return;
+    };
+
+    cr.set_source_rgba(foreground_dim.0, foreground_dim.1, foreground_dim.2, 1.0);
+    cr.set_line_width(1.0);
+    cr.set_dash(&[4.0, 4.0], 0.0);
+    cr.move_to(x, 0.0);
+    cr.line_to(x, height);
+    cr.move_to(0.0, y);
+    cr.line_to(width, y);
+    cr.stroke().unwrap();
+    cr.set_dash(&[], 0.0);
+
+    cr.set_source_rgba(foreground.0, foreground.1, foreground.2, 1.0);
+    cr.arc(x, y, 5.0, 0.0, 2.0 * PI);
+    cr.fill().unwrap();
 }
 
 fn build_ui(application: &Application) {

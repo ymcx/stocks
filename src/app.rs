@@ -21,12 +21,7 @@ use adw::{
     },
     prelude::*,
 };
-use std::{
-    cell::RefCell,
-    f64::{INFINITY, NEG_INFINITY},
-    rc::Rc,
-    sync::OnceLock,
-};
+use std::{cell::RefCell, rc::Rc, sync::OnceLock};
 use tokio::{
     runtime::Runtime,
     sync::mpsc::{self, Sender},
@@ -465,7 +460,16 @@ fn create_stock_page_ranges(stock: &Stock, sender: &Sender<Stock>) -> ScrolledWi
         .spacing(8)
         .build();
 
-    for range in Range::VALUES {
+    for range in [
+        Range::OneDay,
+        Range::FiveDays,
+        Range::OneMonth,
+        Range::SixMonths,
+        Range::Ytd,
+        Range::OneYear,
+        Range::FiveYears,
+        Range::Max,
+    ] {
         let symbol = stock.symbol.clone();
         let sender = sender.clone();
         let button = Button::builder().label(range.as_str()).build();
@@ -582,8 +586,8 @@ fn draw_chart(_area: &DrawingArea, cr: &Context, width: i32, height: i32, quote:
     let height = height as f64;
     let step = width / usize::max(quote.len() - 1, 1) as f64;
 
-    let min = quote.iter().copied().fold(INFINITY, f64::min);
-    let max = quote.iter().copied().fold(NEG_INFINITY, f64::max);
+    let min = quote.iter().copied().fold(f64::INFINITY, f64::min);
+    let max = quote.iter().copied().fold(f64::NEG_INFINITY, f64::max);
     let span = max - min;
 
     let coordinates: Vec<(f64, f64)> = quote

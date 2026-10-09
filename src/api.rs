@@ -3,6 +3,7 @@ use serde_json::Value;
 use std::sync::OnceLock;
 use tokio::sync::mpsc::Sender;
 
+#[allow(dead_code)]
 #[derive(Clone, Copy)]
 pub enum Range {
     OneDay,
@@ -10,101 +11,110 @@ pub enum Range {
     OneMonth,
     ThreeMonths,
     SixMonths,
+    Ytd,
     OneYear,
     TwoYears,
     FiveYears,
     TenYears,
-    Ytd,
     Max,
 }
 
 impl Range {
-    pub const VALUES: [Self; 11] = [
-        Self::OneDay,
-        Self::FiveDays,
-        Self::OneMonth,
-        Self::ThreeMonths,
-        Self::SixMonths,
-        Self::OneYear,
-        Self::TwoYears,
-        Self::FiveYears,
-        Self::TenYears,
-        Self::Ytd,
-        Self::Max,
-    ];
-
-    pub fn as_str(&self) -> &str {
+    pub fn as_api_str(&self) -> &str {
         match self {
             Self::OneDay => "1d",
             Self::FiveDays => "5d",
             Self::OneMonth => "1mo",
             Self::ThreeMonths => "3mo",
             Self::SixMonths => "6mo",
+            Self::Ytd => "ytd",
             Self::OneYear => "1y",
             Self::TwoYears => "2y",
             Self::FiveYears => "5y",
             Self::TenYears => "10y",
-            Self::Ytd => "ytd",
             Self::Max => "max",
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::OneDay => "1D",
+            Self::FiveDays => "5D",
+            Self::OneMonth => "1M",
+            Self::ThreeMonths => "3M",
+            Self::SixMonths => "6M",
+            Self::Ytd => "YTD",
+            Self::OneYear => "1Y",
+            Self::TwoYears => "2Y",
+            Self::FiveYears => "5Y",
+            Self::TenYears => "10Y",
+            Self::Max => "All",
         }
     }
 
     pub fn parse(string: &str) -> Option<Self> {
         match string {
-            "1d" => Some(Self::OneDay),
-            "5d" => Some(Self::FiveDays),
-            "1mo" => Some(Self::OneMonth),
-            "3mo" => Some(Self::ThreeMonths),
-            "6mo" => Some(Self::SixMonths),
-            "1y" => Some(Self::OneYear),
-            "2y" => Some(Self::TwoYears),
-            "5y" => Some(Self::FiveYears),
-            "10y" => Some(Self::TenYears),
-            "ytd" => Some(Self::Ytd),
-            "max" => Some(Self::Max),
+            "1D" | "1d" => Some(Self::OneDay),
+            "5D" | "5d" => Some(Self::FiveDays),
+            "1M" | "1mo" => Some(Self::OneMonth),
+            "3M" | "3mo" => Some(Self::ThreeMonths),
+            "6M" | "6mo" => Some(Self::SixMonths),
+            "YTD" | "ytd" => Some(Self::Ytd),
+            "1Y" | "1y" => Some(Self::OneYear),
+            "2Y" | "2y" => Some(Self::TwoYears),
+            "5Y" | "5y" => Some(Self::FiveYears),
+            "10Y" | "10y" => Some(Self::TenYears),
+            "All" | "max" => Some(Self::Max),
             _ => None,
         }
     }
 
-    pub fn get_interval(&self) -> Interval {
+    pub fn get_interval(&self) -> Option<Interval> {
         match self {
-            Self::OneDay => Interval::OneMinute,
-            Self::FiveDays => Interval::FiveMinutes,
-            Self::OneMonth | Self::ThreeMonths | Self::SixMonths | Self::OneYear | Self::Ytd => {
-                Interval::OneDay
+            Self::OneDay | Self::FiveDays => Some(Interval::OneMinute),
+            Self::OneMonth => Some(Interval::TwoMinutes),
+            Self::ThreeMonths | Self::SixMonths | Self::Ytd | Self::OneYear | Self::TwoYears => {
+                Some(Interval::OneHour)
             }
-            Self::TwoYears | Self::FiveYears => Interval::OneWeek,
-            Self::TenYears | Self::Max => Interval::OneMonth,
+            Self::FiveYears | Self::TenYears => Some(Interval::OneDay),
+            Self::Max => None,
         }
     }
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Copy)]
 pub enum Interval {
     OneMinute,
+    TwoMinutes,
     FiveMinutes,
+    FifteenMinutes,
+    ThirtyMinutes,
+    SixtyMinutes,
+    NinetyMinutes,
+    OneHour,
+    FourHours,
     OneDay,
+    FiveDays,
     OneWeek,
     OneMonth,
     ThreeMonths,
 }
 
 impl Interval {
-    #[allow(dead_code)]
-    pub const VALUES: [Self; 6] = [
-        Self::OneMinute,
-        Self::FiveMinutes,
-        Self::OneDay,
-        Self::OneWeek,
-        Self::OneMonth,
-        Self::ThreeMonths,
-    ];
-
-    pub fn as_str(&self) -> &str {
+    pub fn as_api_str(&self) -> &str {
         match self {
             Self::OneMinute => "1m",
+            Self::TwoMinutes => "2m",
             Self::FiveMinutes => "5m",
+            Self::FifteenMinutes => "15m",
+            Self::ThirtyMinutes => "30m",
+            Self::SixtyMinutes => "60m",
+            Self::NinetyMinutes => "90m",
+            Self::OneHour => "1h",
+            Self::FourHours => "4h",
             Self::OneDay => "1d",
+            Self::FiveDays => "5d",
             Self::OneWeek => "1wk",
             Self::OneMonth => "1mo",
             Self::ThreeMonths => "3mo",
@@ -114,8 +124,16 @@ impl Interval {
     pub fn parse(string: &str) -> Option<Self> {
         match string {
             "1m" => Some(Self::OneMinute),
+            "2m" => Some(Self::TwoMinutes),
             "5m" => Some(Self::FiveMinutes),
+            "15m" => Some(Self::FifteenMinutes),
+            "30m" => Some(Self::ThirtyMinutes),
+            "60m" => Some(Self::SixtyMinutes),
+            "90m" => Some(Self::NinetyMinutes),
+            "1h" => Some(Self::OneHour),
+            "4h" => Some(Self::FourHours),
             "1d" => Some(Self::OneDay),
+            "5d" => Some(Self::FiveDays),
             "1wk" => Some(Self::OneWeek),
             "1mo" => Some(Self::OneMonth),
             "3mo" => Some(Self::ThreeMonths),
@@ -415,13 +433,16 @@ impl Stock {
     }
 
     pub async fn fetch(symbol: &str, range: Range) -> Option<Self> {
-        let interval = range.get_interval();
-        let url = format!(
-            "https://query1.finance.yahoo.com/v8/finance/chart/{}?range={}&interval={}",
-            symbol,
-            range.as_str(),
-            interval.as_str(),
-        );
+        let base = "https://query1.finance.yahoo.com/v8/finance/chart";
+        let url = if let Some(interval) = range.get_interval() {
+            let range = range.as_api_str();
+            let interval = interval.as_api_str();
+            format!("{}/{}?range={}&interval={}", base, symbol, range, interval)
+        } else {
+            let range = range.as_api_str();
+            format!("{}/{}?range={}", base, symbol, range)
+        };
+
         let client = client();
         let response = client.get(url).send().await.ok()?;
         let text = response.text().await.ok()?;

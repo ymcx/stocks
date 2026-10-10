@@ -10,9 +10,9 @@ use adw::{
     NavigationSplitView, NavigationView, PreferencesGroup, PreferencesPage, StatusPage,
     ToolbarView,
     gtk::{
-        Box, Button, DragSource, DrawingArea, DropTarget, GestureClick, Label, License, ListBox,
-        ListBoxRow, MenuButton, Orientation, PolicyType, PopoverMenu, ScrolledWindow,
-        WidgetPaintable,
+        Align, Box, Button, DragSource, DrawingArea, DropTarget, EventControllerMotion,
+        GestureClick, Label, License, ListBox, ListBoxRow, MenuButton, Orientation, Overlay,
+        PolicyType, PopoverMenu, ScrolledWindow, WidgetPaintable,
         cairo::{Context, FontSlant, FontWeight, LinearGradient},
         gdk::{ContentProvider, DragAction, Rectangle},
         gio::{Menu, SimpleAction, SimpleActionGroup},
@@ -21,7 +21,7 @@ use adw::{
     },
     prelude::*,
 };
-use gtk::EventControllerMotion;
+use jiff::{Timestamp, tz::TimeZone};
 use std::{cell::RefCell, f64::consts::PI, rc::Rc, sync::OnceLock};
 use tokio::{
     runtime::Runtime,
@@ -423,6 +423,7 @@ fn create_stock_page_header_metadata(stock: &Stock, color_scheme: &ColorScheme) 
     container
 }
 
+// TODO: make price & change match selected range
 fn create_stock_page_header(stock: &Stock, color_scheme: &ColorScheme) -> Box {
     let header = Box::builder()
         .orientation(Orientation::Vertical)
@@ -443,16 +444,112 @@ fn create_stock_page_header(stock: &Stock, color_scheme: &ColorScheme) -> Box {
     header
 }
 
-fn create_stock_page_chart(state: &Rc<RefCell<Stock>>) -> DrawingArea {
-    let chart = DrawingArea::builder().vexpand(true).hexpand(true).build();
+fn create_stock_page_chart_infobox(color_scheme: &ColorScheme) -> (Bin, Label, Label, Label) {
+    let infobox = Bin::builder()
+        .css_classes(["numeric", "card"])
+        .halign(Align::Start)
+        .valign(Align::Start)
+        .margin_bottom(16)
+        .margin_end(16)
+        .margin_start(16)
+        .margin_top(16)
+        .sensitive(false)
+        .visible(false)
+        .build();
+
+    let container = Box::builder()
+        .orientation(Orientation::Vertical)
+        .margin_bottom(16)
+        .margin_end(16)
+        .margin_start(16)
+        .margin_top(16)
+        .spacing(8)
+        .build();
+    infobox.set_child(Some(&container));
+
+    let color = color_scheme.foreground_dim.as_attrs(false, Some(12));
+    let time = Label::builder().attributes(&color).xalign(0.0).build();
+    container.append(&time);
+
+    let subcontainer = Box::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(4)
+        .build();
+    container.append(&subcontainer);
+
+    let color = color_scheme.foreground.as_attrs(true, Some(12));
+    let quote = Label::builder()
+        .attributes(&color)
+        .halign(Align::Start)
+        .build();
+    subcontainer.append(&quote);
+
+    let spacer = Box::builder().hexpand(true).build();
+    subcontainer.append(&spacer);
+
+    // TODO: make it red if it's negative
+    let color = color_scheme.blue.as_attrs(true, Some(12));
+    let change = Label::builder()
+        .attributes(&color)
+        .halign(Align::End)
+        .build();
+    subcontainer.append(&change);
+
+    (infobox, time, quote, change)
+}
+
+fn create_stock_page_chart(state: &Rc<RefCell<Stock>>, color_scheme: &ColorScheme) -> Overlay {
+    let overlay = Overlay::new();
     let cursor = Rc::new(RefCell::new(None));
+    let time_zone = TimeZone::system();
+
+    // TODO: fix chart drawing on top of infobox
+    let chart = DrawingArea::builder().vexpand(true).hexpand(true).build();
+    overlay.set_child(Some(&chart));
+
+    let info = create_stock_page_chart_infobox(color_scheme);
+    let (infobox, infobox_time, infobox_quote, infobox_change) = info;
+    overlay.add_overlay(&infobox);
+
     let motion = EventControllerMotion::new();
     chart.add_controller(motion.clone());
 
     let chart_value = chart.clone();
     let cursor_value = cursor.clone();
+    let state_value = state.clone();
+    let infobox_value = infobox.clone();
     motion.connect_motion(move |_, x, y| {
+        let quote_close = &state_value.borrow().quote_close;
+        let timestamps = &state_value.borrow().timestamp;
+        if !quote_close.is_empty() {
+            let width = chart_value.width() as f64;
+            let amount = (quote_close.len() - 1) as f64;
+            let i = (x / width * amount).min(amount) as usize;
+
+            let quote_start = quote_close[0];
+            let quote = quote_close[i];
+            let change = quote / quote_start - 1.0;
+
+            let time = timestamps[i];
+
+            let quote = format!("{:.2}", quote);
+            infobox_quote.set_text(&quote);
+
+            let change = format!("{:+.2}%", change * 100.0);
+            infobox_change.set_text(&change);
+
+            // TODO: fix time formatting
+            if let Ok(time) = Timestamp::from_second(time) {
+                let time = time_zone
+                    .to_datetime(time)
+                    .strftime("%d/%m/%y %X")
+                    .to_string();
+                infobox_time.set_text(&time);
+            }
+        }
+
         *cursor_value.borrow_mut() = Some((x, y));
+        infobox_value.set_visible(true);
         chart_value.queue_draw();
     });
 
@@ -460,18 +557,21 @@ fn create_stock_page_chart(state: &Rc<RefCell<Stock>>) -> DrawingArea {
     let cursor_value = cursor.clone();
     motion.connect_leave(move |_| {
         *cursor_value.borrow_mut() = None;
+        infobox.set_visible(false);
         chart_value.queue_draw();
     });
 
     let state_value = state.clone();
     chart.set_draw_func(move |_, cr, width, height| {
         let quote_close = &state_value.borrow().quote_close;
+        let cursor = *cursor.borrow();
         draw_chart(cr, width, height, quote_close, &cursor);
     });
 
-    chart
+    overlay
 }
 
+// TODO: highlight selected range
 fn create_stock_page_ranges(
     stock: &Stock,
     sender: &Sender<Stock>,
@@ -543,7 +643,7 @@ fn create_stock_page(stock: Stock, range_default: &Rc<RefCell<Range>>) -> Naviga
     let header = create_stock_page_header(&stock, &color_scheme);
     content.append(&header);
 
-    let chart = create_stock_page_chart(&state);
+    let chart = create_stock_page_chart(&state, &color_scheme);
     content.append(&chart);
 
     let ranges = create_stock_page_ranges(&stock, &sender, range_default);
@@ -586,8 +686,9 @@ fn get_decimals_for_step(step: f64) -> usize {
     decimals
 }
 
-fn get_quote_levels(min: f64, max: f64) -> (Vec<f64>, usize) {
-    let step_estimate = (max - min) / 6.0;
+fn get_quote_levels(min: f64, max: f64, height: f64) -> (Vec<f64>, usize) {
+    let ideal_amount = height / 100.0;
+    let step_estimate = (max - min) / ideal_amount;
     let step = get_quote_levels_step(step_estimate);
 
     let mut levels = Vec::new();
@@ -606,22 +707,22 @@ fn draw_chart(
     cr: &Context,
     width: i32,
     height: i32,
-    quote: &Vec<f64>,
-    cursor: &Rc<RefCell<Option<(f64, f64)>>>,
+    quotes: &Vec<f64>,
+    cursor: &Option<(f64, f64)>,
 ) {
-    if quote.len() == 0 || width == 0 || height == 0 {
+    if quotes.len() == 0 || width == 0 || height == 0 {
         return;
     }
 
     let width = width as f64;
     let height = height as f64;
-    let step = width / usize::max(quote.len() - 1, 1) as f64;
+    let step = width / usize::max(quotes.len() - 1, 1) as f64;
 
-    let min = quote.iter().copied().fold(f64::INFINITY, f64::min);
-    let max = quote.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let min = quotes.iter().copied().fold(f64::INFINITY, f64::min);
+    let max = quotes.iter().copied().fold(f64::NEG_INFINITY, f64::max);
     let span = max - min;
 
-    let coordinates: Vec<(f64, f64)> = quote
+    let coordinates: Vec<(f64, f64)> = quotes
         .iter()
         .enumerate()
         .map(|(i, &value)| {
@@ -658,26 +759,30 @@ fn draw_chart(
     cr.set_line_width(2.0);
     cr.stroke().unwrap();
 
-    let (levels, decimals) = get_quote_levels(min, max);
-    let text = format!("{:.decimals$}", levels[levels.len() - 1]);
-    let extents = cr.text_extents(&text).unwrap();
-    for level in levels {
-        let x = width - extents.width() - 20.0;
-        let y = height - (level - min) / span * height;
-        let text = format!("{:.decimals$}", level);
-        cr.set_source_rgba(foreground_dim.0, foreground_dim.1, foreground_dim.2, 1.0);
-        cr.select_font_face("Adwaita Sans", FontSlant::Normal, FontWeight::Normal);
-        cr.set_font_size(16.0);
-        cr.move_to(x, y);
-        cr.show_text(&text).unwrap();
+    // TODO: make sure the upmost level is not clipped
+    let (levels, decimals) = get_quote_levels(min, max, height);
+    if !levels.is_empty() {
+        let text = format!("{:.decimals$}", levels[levels.len() - 1]);
+        let extents = cr.text_extents(&text).unwrap();
+        for level in levels {
+            let x = width - 24.0 - extents.width();
+            let y = height - (level - min) / span * height - extents.height() / 2.0;
+            let text = format!("{:.decimals$}", level);
+            cr.set_source_rgba(foreground_dim.0, foreground_dim.1, foreground_dim.2, 1.0);
+            cr.select_font_face("Adwaita Sans", FontSlant::Normal, FontWeight::Normal);
+            cr.set_font_size(16.0);
+            cr.move_to(x, y);
+            cr.show_text(&text).unwrap();
+        }
     }
 
-    let Some((x, y)) = cursor.borrow().and_then(|(x, _)| {
-        let y = coordinates.iter().find(|&&(i, _)| x < i).map(|&(_, j)| j)?;
-        Some((x, y))
-    }) else {
+    let &Some((x, _)) = cursor else {
         return;
     };
+
+    let amount = (coordinates.len() - 1) as f64;
+    let index = (x / width * amount).min(amount) as usize;
+    let (_, y) = coordinates[index];
 
     cr.set_source_rgba(foreground_dim.0, foreground_dim.1, foreground_dim.2, 1.0);
     cr.set_line_width(1.0);
@@ -814,6 +919,7 @@ fn build_ui(application: &Application) {
                 let symbol = stock.symbol.clone();
                 *symbol_default.borrow_mut() = symbol.clone();
 
+                // TODO: fix page selection with narrow window
                 let stock_page = create_stock_page(stock, &range_default);
                 navigation.push(&stock_page);
 

@@ -857,6 +857,7 @@ fn build_ui(application: &Application) {
     navigation.connect_popped({
         let settings = settings.clone();
         let sidebar = sidebar.clone();
+        let split = split.clone();
         let symbol_default = symbol_default.clone();
         move |navigation, _| {
             let Some(visible_page) = navigation.visible_page() else {
@@ -866,6 +867,7 @@ fn build_ui(application: &Application) {
             if visible_page == placeholder_page {
                 *symbol_default.borrow_mut() = String::new();
                 sidebar.unselect_all();
+                split.set_show_content(false);
             } else {
                 let symbol = visible_page.title().to_string();
                 *symbol_default.borrow_mut() = symbol.clone();
@@ -914,14 +916,15 @@ fn build_ui(application: &Application) {
 
     glib::spawn_future_local({
         let sidebar = sidebar.clone();
+        let split = split.clone();
         async move {
             while let Some(stock) = receiver.recv().await {
                 let symbol = stock.symbol.clone();
                 *symbol_default.borrow_mut() = symbol.clone();
 
-                // TODO: fix page selection with narrow window
                 let stock_page = create_stock_page(stock, &range_default);
                 navigation.push(&stock_page);
+                split.set_show_content(true);
 
                 if let Some(index) = settings.find_bookmark(&symbol) {
                     sidebar.select_row(sidebar.row_at_index(index as i32).as_ref());

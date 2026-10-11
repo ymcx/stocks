@@ -14,10 +14,10 @@
       <default>false</default>
     </key>
     <key name="last-stock" type="s">
-      <default>"1mo"</default>
+      <default>""</default>
     </key>
     <key name="last-range" type="s">
-      <default>""</default>
+      <default>"1mo"</default>
     </key>
   </schema>
 </schemalist>

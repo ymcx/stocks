@@ -70,7 +70,6 @@ fn create_about_dialog() -> AboutDialog {
     about_dialog
 }
 
-// TODO: make the current sidebar button unclickable
 fn create_sidebar_button(sidebar: &ListBox, bookmark: &str, settings: &Settings) -> ListBoxRow {
     let list_box_row = ListBoxRow::new();
 
@@ -435,7 +434,11 @@ fn create_stock_page_header_left_price(stock: &Stock) -> (Box, (Label, Label)) {
     (container, (change, percent))
 }
 
-fn create_stock_page_header_left_metadata_item(label: &str, value: f64, decimals: bool) -> (Box, Label) {
+fn create_stock_page_header_left_metadata_item(
+    label: &str,
+    value: f64,
+    decimals: bool,
+) -> (Box, Label) {
     let container = Box::builder()
         .orientation(Orientation::Horizontal)
         .spacing(8)
@@ -519,7 +522,11 @@ fn update_stock_page_header_left(stock: &Stock, values: &(Label, Label, Label, L
 
 fn create_stock_page_header(
     stock: &Stock,
-) -> (Box, (Label, Label, Label, Label), (Bin, Label, Label, Label)) {
+) -> (
+    Box,
+    (Label, Label, Label, Label),
+    (Bin, Label, Label, Label),
+) {
     let header = Box::builder()
         .css_classes(["numeric"])
         .orientation(Orientation::Horizontal)
@@ -1018,6 +1025,12 @@ fn build_ui(application: &Application) {
                 *symbol_default.borrow_mut() = symbol.clone();
 
                 let stock_page = create_stock_page(stock, &range_default);
+                if let Some(page) = navigation.visible_page() {
+                    if page.title() == stock_page.title() {
+                        continue;
+                    }
+                }
+
                 navigation.push(&stock_page);
                 split.set_show_content(true);
 

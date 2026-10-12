@@ -357,7 +357,49 @@ fn create_stock_page_header_left_title(stock: &Stock) -> Box {
     container
 }
 
-fn create_stock_page_header_left_price(stock: &Stock) -> Box {
+fn stock_quote_high(stock: &Stock) -> f64 {
+    let quotes = if stock.quote_high.is_empty() {
+        &stock.quote_close
+    } else {
+        &stock.quote_high
+    };
+    quotes
+        .iter()
+        .copied()
+        .max_by(f64::total_cmp)
+        .unwrap_or_default()
+}
+
+fn stock_quote_low(stock: &Stock) -> f64 {
+    let quotes = if stock.quote_low.is_empty() {
+        &stock.quote_close
+    } else {
+        &stock.quote_low
+    };
+    quotes
+        .iter()
+        .copied()
+        .min_by(f64::total_cmp)
+        .unwrap_or_default()
+}
+
+fn stock_quote_change(stock: &Stock) -> f64 {
+    let first = stock.quote_close.first().copied().unwrap_or_default();
+    let last = stock.quote_close.last().copied().unwrap_or_default();
+    last - first
+}
+
+fn stock_quote_change_percent(stock: &Stock) -> f64 {
+    let first = stock.quote_close.first().copied().unwrap_or_default();
+    let last = stock.quote_close.last().copied().unwrap_or_default();
+    if first != 0.0 {
+        (last / first - 1.0) * 100.0
+    } else {
+        0.0
+    }
+}
+
+fn create_stock_page_header_left_price(stock: &Stock) -> (Box, (Label, Label)) {
     let container = Box::builder()
         .orientation(Orientation::Horizontal)
         .spacing(8)
@@ -370,34 +412,30 @@ fn create_stock_page_header_left_price(stock: &Stock) -> Box {
         .build();
     container.append(&price);
 
-    let first = stock.quote_close.first().copied().unwrap_or_default();
-    let last = stock.quote_close.last().copied().unwrap_or_default();
+    let color = if stock_quote_change(stock) < 0.0 {
+        "red"
+    } else {
+        "blue"
+    };
 
-    let change = last - first;
-    let color = if change < 0.0 { "red" } else { "blue" };
-    let change = format!("{:+.2}", change);
+    let change = format!("{:+.2}", stock_quote_change(stock));
     let change = Label::builder()
         .css_classes([color, "title-1"])
         .label(change)
         .build();
     container.append(&change);
 
-    let percent = if first != 0.0 {
-        (last / first - 1.0) * 100.0
-    } else {
-        0.0
-    };
-    let percent = format!("({:+.2}%)", percent);
+    let percent = format!("({:+.2}%)", stock_quote_change_percent(stock));
     let percent = Label::builder()
         .css_classes([color, "title-1"])
         .label(percent)
         .build();
     container.append(&percent);
 
-    container
+    (container, (change, percent))
 }
 
-fn create_stock_page_header_left_metadata_item(label: &str, value: f64, decimals: bool) -> Box {
+fn create_stock_page_header_left_metadata_item(label: &str, value: f64, decimals: bool) -> (Box, Label) {
     let container = Box::builder()
         .orientation(Orientation::Horizontal)
         .spacing(8)
@@ -414,48 +452,37 @@ fn create_stock_page_header_left_metadata_item(label: &str, value: f64, decimals
     } else {
         value.to_string()
     };
-    let value = Label::builder()
+    let value_label = Label::builder()
         .css_classes(["heading"])
         .label(value)
         .build();
-    container.append(&value);
+    container.append(&value_label);
 
-    container
+    (container, value_label)
 }
 
-fn create_stock_page_header_left_metadata(stock: &Stock) -> Box {
+fn create_stock_page_header_left_metadata(stock: &Stock) -> (Box, (Label, Label)) {
     let container = Box::builder()
         .orientation(Orientation::Horizontal)
         .spacing(8)
         .build();
 
-    let high = stock
-        .quote_close
-        .iter()
-        .copied()
-        .max_by(f64::total_cmp)
-        .unwrap_or_default();
-    let high = create_stock_page_header_left_metadata_item("High", high, true);
+    let (high, high_value) =
+        create_stock_page_header_left_metadata_item("High", stock_quote_high(stock), true);
     container.append(&high);
 
-    let low = stock
-        .quote_close
-        .iter()
-        .copied()
-        .min_by(f64::total_cmp)
-        .unwrap_or_default();
-    let low = create_stock_page_header_left_metadata_item("Low", low, true);
+    let (low, low_value) =
+        create_stock_page_header_left_metadata_item("Low", stock_quote_low(stock), true);
     container.append(&low);
 
     let volume = stock.regular_market_volume as f64;
-    let volume = create_stock_page_header_left_metadata_item("Volume", volume, false);
+    let (volume, _) = create_stock_page_header_left_metadata_item("Volume", volume, false);
     container.append(&volume);
 
-    container
+    (container, (high_value, low_value))
 }
 
-// TODO: make price & change match selected range
-fn create_stock_page_header_left(stock: &Stock) -> Box {
+fn create_stock_page_header_left(stock: &Stock) -> (Box, (Label, Label, Label, Label)) {
     let header = Box::builder()
         .orientation(Orientation::Vertical)
         .halign(Align::Start)
@@ -465,16 +492,34 @@ fn create_stock_page_header_left(stock: &Stock) -> Box {
     let title = create_stock_page_header_left_title(stock);
     header.append(&title);
 
-    let price = create_stock_page_header_left_price(stock);
+    let (price, (change, percent)) = create_stock_page_header_left_price(stock);
     header.append(&price);
 
-    let metadata = create_stock_page_header_left_metadata(stock);
+    let (metadata, (high, low)) = create_stock_page_header_left_metadata(stock);
     header.append(&metadata);
 
-    header
+    (header, (change, percent, high, low))
 }
 
-fn create_stock_page_header(stock: &Stock) -> (Box, (Bin, Label, Label, Label)) {
+fn update_stock_page_header_left(stock: &Stock, values: &(Label, Label, Label, Label)) {
+    let (change_label, percent_label, high_label, low_label) = values;
+
+    let change = stock_quote_change(stock);
+    let color = if change < 0.0 { "red" } else { "blue" };
+
+    change_label.set_css_classes(&[color, "title-1"]);
+    change_label.set_text(&format!("{:+.2}", change));
+
+    percent_label.set_css_classes(&[color, "title-1"]);
+    percent_label.set_text(&format!("({:+.2}%)", stock_quote_change_percent(stock)));
+
+    high_label.set_text(&format!("{:.2}", stock_quote_high(stock)));
+    low_label.set_text(&format!("{:.2}", stock_quote_low(stock)));
+}
+
+fn create_stock_page_header(
+    stock: &Stock,
+) -> (Box, (Label, Label, Label, Label), (Bin, Label, Label, Label)) {
     let header = Box::builder()
         .css_classes(["numeric"])
         .orientation(Orientation::Horizontal)
@@ -482,7 +527,7 @@ fn create_stock_page_header(stock: &Stock) -> (Box, (Bin, Label, Label, Label)) 
         .margin_end(16)
         .build();
 
-    let header_left = create_stock_page_header_left(stock);
+    let (header_left, values) = create_stock_page_header_left(stock);
     header.append(&header_left);
 
     let spacer = Box::builder().hexpand(true).build();
@@ -491,7 +536,7 @@ fn create_stock_page_header(stock: &Stock) -> (Box, (Bin, Label, Label, Label)) 
     let info = create_stock_page_chart_infobox();
     header.append(&info.0);
 
-    (header, info)
+    (header, values, info)
 }
 
 fn create_stock_page_chart_infobox() -> (Bin, Label, Label, Label) {
@@ -687,7 +732,7 @@ fn create_stock_page(stock: Stock, range_default: &Rc<RefCell<Range>>) -> Naviga
         .build();
     toolbar_view.set_content(Some(&content));
 
-    let (header, info) = create_stock_page_header(&stock);
+    let (header, header_values, info) = create_stock_page_header(&stock);
     content.append(&header);
 
     let chart = create_stock_page_chart(&state, &info);
@@ -698,6 +743,7 @@ fn create_stock_page(stock: Stock, range_default: &Rc<RefCell<Range>>) -> Naviga
 
     glib::spawn_future_local(async move {
         while let Some(stock) = receiver.recv().await {
+            update_stock_page_header_left(&stock, &header_values);
             *state.borrow_mut() = stock;
             chart.queue_draw();
         }

@@ -11,8 +11,8 @@ use adw::{
     ToolbarView,
     gtk::{
         Align, Box, Button, DragSource, DrawingArea, DropTarget, EventControllerMotion,
-        GestureClick, Label, License, ListBox, ListBoxRow, MenuButton, Orientation, Overlay,
-        PolicyType, PopoverMenu, ScrolledWindow, WidgetPaintable,
+        GestureClick, Label, License, ListBox, ListBoxRow, MenuButton, Orientation, PolicyType,
+        PopoverMenu, ScrolledWindow, WidgetPaintable,
         cairo::{Context, FontSlant, FontWeight, LinearGradient},
         gdk::{ContentProvider, DragAction, Rectangle},
         gio::{Menu, SimpleAction, SimpleActionGroup},
@@ -69,6 +69,7 @@ fn create_about_dialog() -> AboutDialog {
     about_dialog
 }
 
+// TODO: make the current sidebar button unclickable
 fn create_sidebar_button(sidebar: &ListBox, bookmark: &str, settings: &Settings) -> ListBoxRow {
     let list_box_row = ListBoxRow::new();
 
@@ -345,49 +346,54 @@ fn create_add_dialog(settings: &Settings, sidebar: &ListBox) -> Dialog {
     dialog
 }
 
-fn create_stock_page_header_title(stock: &Stock, color_scheme: &ColorScheme) -> Box {
+fn create_stock_page_header_left_title(stock: &Stock, color_scheme: &ColorScheme) -> Box {
     let container = Box::builder().build();
 
     let color = color_scheme.foreground.as_attrs(true, Some(24));
-    let title = stock.short_name.to_string();
+    let title = stock.long_name.to_string();
     let title = Label::builder().attributes(&color).label(title).build();
     container.append(&title);
 
     container
 }
 
-fn create_stock_page_header_price(stock: &Stock, color_scheme: &ColorScheme) -> Box {
+fn create_stock_page_header_left_price(stock: &Stock, color_scheme: &ColorScheme) -> Box {
     let container = Box::builder()
         .orientation(Orientation::Horizontal)
-        .spacing(16)
+        .spacing(8)
         .build();
 
     let color = color_scheme.foreground.as_attrs(true, Some(16));
-    let price = format!("{} {}", stock.regular_market_price, stock.currency);
+    let price = format!("{:.2}", stock.regular_market_price);
     let price = Label::builder().attributes(&color).label(price).build();
     container.append(&price);
+
+    let currency = stock.currency.to_string();
+    let currency = Label::builder().attributes(&color).label(currency).build();
+    container.append(&currency);
 
     let color = color_scheme
         .change(stock.fullday_change)
         .as_attrs(true, Some(16));
-    let change = format!(
-        "{:.2}% ({})",
-        stock.fullday_change_percent, stock.fullday_change
-    );
+    let change = format!("{:+.2}", stock.fullday_change);
     let change = Label::builder().attributes(&color).label(change).build();
     container.append(&change);
+
+    let percent = format!("({:+.2}%)", stock.fullday_change_percent);
+    let percent = Label::builder().attributes(&color).label(percent).build();
+    container.append(&percent);
 
     container
 }
 
-fn create_stock_page_header_metadata_item(
+fn create_stock_page_header_left_metadata_item(
     label: &str,
     value: f64,
     color_scheme: &ColorScheme,
 ) -> Box {
     let container = Box::builder()
         .orientation(Orientation::Horizontal)
-        .spacing(4)
+        .spacing(2)
         .build();
 
     let color = color_scheme.foreground_dim.as_attrs(false, Some(12));
@@ -395,65 +401,81 @@ fn create_stock_page_header_metadata_item(
     container.append(&label);
 
     let color = color_scheme.foreground.as_attrs(true, Some(12));
-    let value = value.to_string();
+    let value = format!("{:.2}", value);
     let value = Label::builder().attributes(&color).label(value).build();
     container.append(&value);
 
     container
 }
 
-fn create_stock_page_header_metadata(stock: &Stock, color_scheme: &ColorScheme) -> Box {
+fn create_stock_page_header_left_metadata(stock: &Stock, color_scheme: &ColorScheme) -> Box {
     let container = Box::builder()
         .orientation(Orientation::Horizontal)
-        .spacing(16)
+        .spacing(8)
         .build();
 
     let high = stock.regular_market_day_high;
-    let high = create_stock_page_header_metadata_item("High", high, color_scheme);
+    let high = create_stock_page_header_left_metadata_item("High", high, color_scheme);
     container.append(&high);
 
     let low = stock.regular_market_day_low;
-    let low = create_stock_page_header_metadata_item("Low", low, color_scheme);
+    let low = create_stock_page_header_left_metadata_item("Low", low, color_scheme);
     container.append(&low);
 
     let volume = stock.regular_market_volume as f64;
-    let volume = create_stock_page_header_metadata_item("Volume", volume, color_scheme);
+    let volume = create_stock_page_header_left_metadata_item("Volume", volume, color_scheme);
     container.append(&volume);
 
     container
 }
 
 // TODO: make price & change match selected range
-fn create_stock_page_header(stock: &Stock, color_scheme: &ColorScheme) -> Box {
+fn create_stock_page_header_left(stock: &Stock, color_scheme: &ColorScheme) -> Box {
     let header = Box::builder()
         .orientation(Orientation::Vertical)
+        .halign(Align::Start)
         .spacing(12)
-        .margin_start(16)
-        .margin_end(16)
         .build();
 
-    let title = create_stock_page_header_title(stock, color_scheme);
+    let title = create_stock_page_header_left_title(stock, color_scheme);
     header.append(&title);
 
-    let price = create_stock_page_header_price(stock, color_scheme);
+    let price = create_stock_page_header_left_price(stock, color_scheme);
     header.append(&price);
 
-    let metadata = create_stock_page_header_metadata(stock, &color_scheme);
+    let metadata = create_stock_page_header_left_metadata(stock, &color_scheme);
     header.append(&metadata);
 
     header
 }
 
+fn create_stock_page_header(
+    stock: &Stock,
+    color_scheme: &ColorScheme,
+) -> (Box, (Bin, Label, Label, Label)) {
+    let header = Box::builder()
+        .orientation(Orientation::Horizontal)
+        .margin_start(16)
+        .margin_end(16)
+        .build();
+
+    let header_left = create_stock_page_header_left(stock, color_scheme);
+    header.append(&header_left);
+
+    let spacer = Box::builder().hexpand(true).build();
+    header.append(&spacer);
+
+    let info = create_stock_page_chart_infobox(color_scheme);
+    header.append(&info.0);
+
+    (header, info)
+}
+
 fn create_stock_page_chart_infobox(color_scheme: &ColorScheme) -> (Bin, Label, Label, Label) {
     let infobox = Bin::builder()
         .css_classes(["numeric", "card"])
-        .halign(Align::Start)
-        .valign(Align::Start)
-        .margin_bottom(16)
-        .margin_end(16)
-        .margin_start(16)
-        .margin_top(16)
-        .sensitive(false)
+        .halign(Align::End)
+        .valign(Align::Center)
         .visible(false)
         .build();
 
@@ -498,18 +520,15 @@ fn create_stock_page_chart_infobox(color_scheme: &ColorScheme) -> (Bin, Label, L
     (infobox, time, quote, change)
 }
 
-fn create_stock_page_chart(state: &Rc<RefCell<Stock>>, color_scheme: &ColorScheme) -> Overlay {
-    let overlay = Overlay::new();
+fn create_stock_page_chart(
+    state: &Rc<RefCell<Stock>>,
+    info: &(Bin, Label, Label, Label),
+) -> DrawingArea {
+    let (infobox, infobox_time, infobox_quote, infobox_change) = info;
     let cursor = Rc::new(RefCell::new(None));
     let time_zone = TimeZone::system();
 
-    // TODO: fix chart drawing on top of infobox
     let chart = DrawingArea::builder().vexpand(true).hexpand(true).build();
-    overlay.set_child(Some(&chart));
-
-    let info = create_stock_page_chart_infobox(color_scheme);
-    let (infobox, infobox_time, infobox_quote, infobox_change) = info;
-    overlay.add_overlay(&infobox);
 
     let motion = EventControllerMotion::new();
     chart.add_controller(motion.clone());
@@ -518,6 +537,9 @@ fn create_stock_page_chart(state: &Rc<RefCell<Stock>>, color_scheme: &ColorSchem
     let cursor_value = cursor.clone();
     let state_value = state.clone();
     let infobox_value = infobox.clone();
+    let infobox_quote_value = infobox_quote.clone();
+    let infobox_change_value = infobox_change.clone();
+    let infobox_time_value = infobox_time.clone();
     motion.connect_motion(move |_, x, y| {
         let quote_close = &state_value.borrow().quote_close;
         let timestamps = &state_value.borrow().timestamp;
@@ -533,10 +555,10 @@ fn create_stock_page_chart(state: &Rc<RefCell<Stock>>, color_scheme: &ColorSchem
             let time = timestamps[i];
 
             let quote = format!("{:.2}", quote);
-            infobox_quote.set_text(&quote);
+            infobox_quote_value.set_text(&quote);
 
             let change = format!("{:+.2}%", change * 100.0);
-            infobox_change.set_text(&change);
+            infobox_change_value.set_text(&change);
 
             // TODO: fix time formatting
             if let Ok(time) = Timestamp::from_second(time) {
@@ -544,7 +566,7 @@ fn create_stock_page_chart(state: &Rc<RefCell<Stock>>, color_scheme: &ColorSchem
                     .to_datetime(time)
                     .strftime("%d/%m/%y %X")
                     .to_string();
-                infobox_time.set_text(&time);
+                infobox_time_value.set_text(&time);
             }
         }
 
@@ -555,9 +577,10 @@ fn create_stock_page_chart(state: &Rc<RefCell<Stock>>, color_scheme: &ColorSchem
 
     let chart_value = chart.clone();
     let cursor_value = cursor.clone();
+    let infobox_value = infobox.clone();
     motion.connect_leave(move |_| {
         *cursor_value.borrow_mut() = None;
-        infobox.set_visible(false);
+        infobox_value.set_visible(false);
         chart_value.queue_draw();
     });
 
@@ -568,7 +591,7 @@ fn create_stock_page_chart(state: &Rc<RefCell<Stock>>, color_scheme: &ColorSchem
         draw_chart(cr, width, height, quote_close, &cursor);
     });
 
-    overlay
+    chart
 }
 
 // TODO: highlight selected range
@@ -634,16 +657,15 @@ fn create_stock_page(stock: Stock, range_default: &Rc<RefCell<Range>>) -> Naviga
 
     let content = Box::builder()
         .orientation(Orientation::Vertical)
-        .spacing(32)
-        .margin_top(32)
-        .margin_bottom(32)
+        .spacing(12)
+        .margin_bottom(12)
         .build();
     toolbar_view.set_content(Some(&content));
 
-    let header = create_stock_page_header(&stock, &color_scheme);
+    let (header, info) = create_stock_page_header(&stock, &color_scheme);
     content.append(&header);
 
-    let chart = create_stock_page_chart(&state, &color_scheme);
+    let chart = create_stock_page_chart(&state, &info);
     content.append(&chart);
 
     let ranges = create_stock_page_ranges(&stock, &sender, range_default);

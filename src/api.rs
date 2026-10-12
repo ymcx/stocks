@@ -70,14 +70,22 @@ impl Range {
         }
     }
 
+    // The absolute minimum Yahoo accepts for each range is given in the comment.
+    // Using the most granular interval is not preferred, since it increases
+    // latency for us, is costly for Yahoo, lags our machine trying to render a
+    // gazillion points and is of little benefit.
     pub fn get_interval(&self) -> Option<Interval> {
         match self {
-            Self::OneDay | Self::FiveDays => Some(Interval::OneMinute),
-            Self::OneMonth => Some(Interval::TwoMinutes),
-            Self::ThreeMonths | Self::SixMonths | Self::Ytd | Self::OneYear | Self::TwoYears => {
-                Some(Interval::OneHour)
-            }
-            Self::FiveYears | Self::TenYears => Some(Interval::OneDay),
+            Self::OneDay => Some(Interval::OneMinute), // Interval::OneMinute
+            Self::FiveDays => Some(Interval::FiveMinutes), // Interval::OneMinute
+            Self::OneMonth => Some(Interval::ThirtyMinutes), // Interval::TwoMinutes
+            Self::ThreeMonths => Some(Interval::NinetyMinutes), // Interval::OneHour
+            Self::SixMonths => Some(Interval::OneHour), // Interval::OneHour
+            Self::Ytd => Some(Interval::FourHours),    // Interval::OneHour
+            Self::OneYear => Some(Interval::FourHours), // Interval::OneHour
+            Self::TwoYears => Some(Interval::FourHours), // Interval::OneHour
+            Self::FiveYears => Some(Interval::OneDay), // Interval::OneDay
+            Self::TenYears => Some(Interval::OneDay),  // Interval::OneDay
             Self::Max => None,
         }
     }

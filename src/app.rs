@@ -349,6 +349,7 @@ fn create_stock_page_header_title(stock: &Stock) -> Box {
     let title = stock.long_name.to_string();
     let title = Label::builder()
         .css_classes(["title-1"])
+        .ellipsize(EllipsizeMode::End)
         .label(title)
         .build();
     container.append(&title);
@@ -398,7 +399,7 @@ fn stock_quote_change_percent(stock: &Stock) -> f64 {
     }
 }
 
-fn create_stock_page_header_price(stock: &Stock) -> (Box, (Label, Label)) {
+fn create_stock_page_header_price(stock: &Stock) -> (Box, Label) {
     let container = Box::builder()
         .orientation(Orientation::Horizontal)
         .spacing(8)
@@ -417,21 +418,19 @@ fn create_stock_page_header_price(stock: &Stock) -> (Box, (Label, Label)) {
         "blue"
     };
 
-    let change = format!("{:+.2}", stock_quote_change(stock));
+    let change = format!(
+        "{:+.2} ({:+.2}%)",
+        stock_quote_change(stock),
+        stock_quote_change_percent(stock)
+    );
     let change = Label::builder()
         .css_classes([color, "title-1"])
+        .ellipsize(EllipsizeMode::End)
         .label(change)
         .build();
     container.append(&change);
 
-    let percent = format!("({:+.2}%)", stock_quote_change_percent(stock));
-    let percent = Label::builder()
-        .css_classes([color, "title-1"])
-        .label(percent)
-        .build();
-    container.append(&percent);
-
-    (container, (change, percent))
+    (container, change)
 }
 
 fn create_stock_page_header_metadata_item(label: &str, value: f64, decimals: bool) -> (Box, Label) {
@@ -481,23 +480,21 @@ fn create_stock_page_header_metadata(stock: &Stock) -> (Box, (Label, Label)) {
     (container, (high_value, low_value))
 }
 
-fn update_stock_page_header_left(stock: &Stock, values: &(Label, Label, Label, Label)) {
-    let (change_label, percent_label, high_label, low_label) = values;
+fn update_stock_page_header_left(stock: &Stock, values: &(Label, Label, Label)) {
+    let (change_label, high_label, low_label) = values;
 
     let change = stock_quote_change(stock);
+    let percent = stock_quote_change_percent(stock);
     let color = if change < 0.0 { "red" } else { "blue" };
 
     change_label.set_css_classes(&[color, "title-1"]);
-    change_label.set_text(&format!("{:+.2}", change));
-
-    percent_label.set_css_classes(&[color, "title-1"]);
-    percent_label.set_text(&format!("({:+.2}%)", stock_quote_change_percent(stock)));
+    change_label.set_text(&format!("{:+.2} ({:+.2}%)", change, percent));
 
     high_label.set_text(&format!("{:.2}", stock_quote_high(stock)));
     low_label.set_text(&format!("{:.2}", stock_quote_low(stock)));
 }
 
-fn create_stock_page_header(stock: &Stock) -> (Box, (Label, Label, Label, Label)) {
+fn create_stock_page_header(stock: &Stock) -> (Box, (Label, Label, Label)) {
     let header = Box::builder()
         .orientation(Orientation::Vertical)
         .margin_start(16)
@@ -508,13 +505,13 @@ fn create_stock_page_header(stock: &Stock) -> (Box, (Label, Label, Label, Label)
     let title = create_stock_page_header_title(stock);
     header.append(&title);
 
-    let (price, (change, percent)) = create_stock_page_header_price(stock);
+    let (price, change) = create_stock_page_header_price(stock);
     header.append(&price);
 
     let (metadata, (high, low)) = create_stock_page_header_metadata(stock);
     header.append(&metadata);
 
-    (header, (change, percent, high, low))
+    (header, (change, high, low))
 }
 
 fn create_stock_page_chart_infobox() -> (Bin, Label, Label, Label) {
@@ -888,6 +885,8 @@ fn build_ui(application: &Application) {
         .default_width(settings.get_window_width())
         .default_height(settings.get_window_height())
         .maximized(settings.get_window_maximized())
+        .width_request(640)
+        .height_request(480)
         .build();
 
     let last_stock = settings.get_last_stock();
@@ -961,7 +960,7 @@ fn build_ui(application: &Application) {
 
     let breakpoint_condition = BreakpointCondition::new_length(
         BreakpointConditionLengthType::MaxWidth,
-        540.0,
+        800.0,
         LengthUnit::Sp,
     );
     let breakpoint = Breakpoint::new(breakpoint_condition);

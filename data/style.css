@@ -1,0 +1,21 @@
+@define-color red #e51665;
+@define-color blue_light #1c7a92;
+@define-color blue_dark #00efe0;
+
+.infobox {
+    background-color: var(--headerbar-bg-color);
+}
+
+.red {
+    color: @red;
+}
+
+.blue {
+    color: @blue_light;
+}
+
+@media (prefers-color-scheme: dark) {
+    .blue {
+        color: @blue_dark;
+    }
+}

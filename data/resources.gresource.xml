@@ -3,4 +3,7 @@
   <gresource prefix="/com/ymcx/Stocks/icons">
     <file>com.ymcx.Stocks.svg</file>
   </gresource>
+  <gresource prefix="/com/ymcx/Stocks">
+    <file>style.css</file>
+  </gresource>
 </gresources>

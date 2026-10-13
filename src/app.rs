@@ -1,7 +1,6 @@
 use crate::{
     APP_ID, APP_NAME, APP_VERSION,
     api::{Range, Stock},
-    color::ColorScheme,
     settings::Settings,
 };
 use adw::{
@@ -10,12 +9,11 @@ use adw::{
     NavigationSplitView, NavigationView, PreferencesGroup, PreferencesPage, StatusPage,
     ToolbarView,
     gtk::{
-        Align, Box, Button, CssProvider, DragSource, DrawingArea, DropTarget,
-        EventControllerMotion, GestureClick, Label, License, ListBox, ListBoxRow, MenuButton,
-        Orientation, Overlay, PolicyType, PopoverMenu, STYLE_PROVIDER_PRIORITY_APPLICATION,
-        ScrolledWindow, WidgetPaintable,
+        Align, Box, Button, DragSource, DrawingArea, DropTarget, EventControllerMotion,
+        GestureClick, Label, License, ListBox, ListBoxRow, MenuButton, Orientation, Overlay,
+        PolicyType, PopoverMenu, ScrolledWindow, WidgetPaintable,
         cairo::{Context, FontSlant, FontWeight, LinearGradient},
-        gdk::{ContentProvider, Display, DragAction, Rectangle},
+        gdk::{ContentProvider, DragAction, RGBA, Rectangle},
         gio::{Menu, SimpleAction, SimpleActionGroup},
         glib::{self, ExitCode, Propagation},
         pango::EllipsizeMode,
@@ -567,7 +565,7 @@ fn create_stock_page_chart_infobox() -> (Bin, Label, Label, Label) {
     (infobox, time, quote, change)
 }
 
-fn create_stock_page_chart(state: &Rc<RefCell<Stock>>) -> Overlay {
+fn create_stock_page_chart(state: &Rc<RefCell<Stock>>, change: &Label, high: &Label) -> Overlay {
     let cursor = Rc::new(RefCell::new(None));
     let time_zone = TimeZone::system();
 
@@ -637,10 +635,22 @@ fn create_stock_page_chart(state: &Rc<RefCell<Stock>>) -> Overlay {
     });
 
     let state_value = state.clone();
+    let change_value = change.clone();
+    let high_value = high.clone();
     chart.set_draw_func(move |_, cr, width, height| {
         let quote_close = &state_value.borrow().quote_close;
         let cursor = *cursor.borrow();
-        draw_chart(cr, width, height, quote_close, &cursor);
+        let color_blue = change_value.color();
+        let color_foreground = high_value.color();
+        draw_chart(
+            cr,
+            width,
+            height,
+            quote_close,
+            &cursor,
+            color_blue,
+            color_foreground,
+        );
     });
 
     overlay
@@ -718,7 +728,7 @@ fn create_stock_page(stock: Stock, range_default: &Rc<RefCell<Range>>) -> Naviga
     let (header, header_values) = create_stock_page_header(&stock);
     content.append(&header);
 
-    let chart = create_stock_page_chart(&state);
+    let chart = create_stock_page_chart(&state, &header_values.0, &header_values.1);
     content.append(&chart);
 
     let ranges = create_stock_page_ranges(&stock, &sender, range_default);
@@ -785,6 +795,8 @@ fn draw_chart(
     height: i32,
     quotes: &Vec<f64>,
     cursor: &Option<(f64, f64)>,
+    blue: RGBA,
+    foreground: RGBA,
 ) {
     if quotes.len() == 0 || width == 0 || height == 0 {
         return;
@@ -810,11 +822,6 @@ fn draw_chart(
     let first = coordinates[0];
     let last = coordinates[coordinates.len() - 1];
 
-    let color_scheme = ColorScheme::new();
-    let foreground = color_scheme.foreground.as_f64();
-    let foreground_dim = color_scheme.foreground_dim.as_f64();
-    let blue = color_scheme.blue.as_f64();
-
     cr.move_to(first.0, height);
     for &(x, y) in &coordinates {
         cr.line_to(x, y);
@@ -822,8 +829,20 @@ fn draw_chart(
     cr.line_to(last.0, height);
     cr.close_path();
     let gradient = LinearGradient::new(0.0, 0.0, 0.0, height);
-    gradient.add_color_stop_rgba(0.0, blue.0, blue.1, blue.2, 0.1);
-    gradient.add_color_stop_rgba(1.0, blue.0, blue.1, blue.2, 0.0);
+    gradient.add_color_stop_rgba(
+        0.0,
+        blue.red() as f64,
+        blue.green() as f64,
+        blue.blue() as f64,
+        0.1,
+    );
+    gradient.add_color_stop_rgba(
+        1.0,
+        blue.red() as f64,
+        blue.green() as f64,
+        blue.blue() as f64,
+        0.0,
+    );
     cr.set_source(gradient).unwrap();
     cr.fill().unwrap();
 
@@ -831,11 +850,17 @@ fn draw_chart(
     for &(x, y) in &coordinates[1..] {
         cr.line_to(x, y);
     }
-    cr.set_source_rgba(blue.0, blue.1, blue.2, 1.0);
+    cr.set_source_rgba(
+        blue.red() as f64,
+        blue.green() as f64,
+        blue.blue() as f64,
+        1.0,
+    );
     cr.set_line_width(2.0);
     cr.stroke().unwrap();
 
-    // TODO: make sure the upmost level is not clipped
+    // TODO: add x labels
+    // TODO: fix the right margin of y labels
     let (levels, decimals) = get_quote_levels(min, max, height);
     if !levels.is_empty() {
         let text = format!("{:.decimals$}", levels[levels.len() - 1]);
@@ -844,7 +869,12 @@ fn draw_chart(
             let x = width - 24.0 - extents.width();
             let y = height - (level - min) / span * height - extents.height() / 2.0;
             let text = format!("{:.decimals$}", level);
-            cr.set_source_rgba(foreground_dim.0, foreground_dim.1, foreground_dim.2, 1.0);
+            cr.set_source_rgba(
+                foreground.red() as f64,
+                foreground.green() as f64,
+                foreground.blue() as f64,
+                0.5,
+            );
             cr.select_font_face("Adwaita Sans", FontSlant::Normal, FontWeight::Normal);
             cr.set_font_size(16.0);
             cr.move_to(x, y);
@@ -860,7 +890,6 @@ fn draw_chart(
     let index = (x / width * amount).round().min(amount) as usize;
     let (x, y) = coordinates[index];
 
-    cr.set_source_rgba(foreground_dim.0, foreground_dim.1, foreground_dim.2, 1.0);
     cr.set_line_width(1.0);
     cr.set_dash(&[4.0, 4.0], 0.0);
     cr.move_to(x, 0.0);
@@ -870,14 +899,17 @@ fn draw_chart(
     cr.stroke().unwrap();
     cr.set_dash(&[], 0.0);
 
-    cr.set_source_rgba(foreground.0, foreground.1, foreground.2, 1.0);
+    cr.set_source_rgba(
+        foreground.red() as f64,
+        foreground.green() as f64,
+        foreground.blue() as f64,
+        1.0,
+    );
     cr.arc(x, y, 5.0, 0.0, 2.0 * PI);
     cr.fill().unwrap();
 }
 
 fn build_ui(application: &Application) {
-    load_css();
-
     let settings = Settings::new();
     let application_window = ApplicationWindow::builder()
         .application(application)
@@ -1028,20 +1060,4 @@ fn runtime() -> &'static Runtime {
     let runtime = RUNTIME.get_or_init(|| Runtime::new().unwrap());
 
     runtime
-}
-
-fn load_css() {
-    let display = Display::default().unwrap();
-    let css_provider = CssProvider::new();
-    css_provider.load_from_string(concat!(
-        ".infobox { background-color: color-mix(in srgb, var(--window-bg-color), white 15%); } ",
-        ".blue    { color:            #00efe0; }",
-        ".red     { color:            #e51665; }"
-    ));
-
-    gtk::style_context_add_provider_for_display(
-        &display,
-        &css_provider,
-        STYLE_PROVIDER_PRIORITY_APPLICATION,
-    );
 }

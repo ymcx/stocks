@@ -240,14 +240,23 @@ fn create_add_dialog(settings: &Settings, sidebar: &ListBox) -> Dialog {
     let preferences_group = PreferencesGroup::new();
     preferences_page.add(&preferences_group);
 
-    // TODO: empty text on dialog open
+    let button_add = Button::builder()
+        .label("_Add")
+        .use_underline(true)
+        .sensitive(false)
+        .css_classes(["suggested-action"])
+        .build();
+
     let entry_row = EntryRow::builder()
         .title("Stock Symbol")
         .activates_default(true)
         .build();
     entry_row.connect_changed({
         let entry = entry_row.clone();
+        let button_add = button_add.clone();
         move |_| {
+            let empty = entry.text().is_empty();
+            button_add.set_sensitive(!empty);
             entry.remove_css_class("error");
         }
     });
@@ -273,12 +282,6 @@ fn create_add_dialog(settings: &Settings, sidebar: &ListBox) -> Dialog {
         .child(&toolbar)
         .build();
 
-    // TODO: disable add button if entry is empty
-    let button_add = Button::builder()
-        .label("_Add")
-        .use_underline(true)
-        .css_classes(["suggested-action"])
-        .build();
     button_add.connect_clicked({
         let dialog = dialog.clone();
         let settings = settings.clone();
@@ -286,7 +289,7 @@ fn create_add_dialog(settings: &Settings, sidebar: &ListBox) -> Dialog {
         let entry_row = entry_row.clone();
         move |_| {
             let bookmark = entry_row.text().trim().to_uppercase();
-            if bookmark.is_empty() {
+            if bookmark.is_empty() || settings.find_bookmark(&bookmark).is_some() {
                 entry_row.add_css_class("error");
                 entry_row.grab_focus();
                 return;
@@ -512,6 +515,7 @@ fn create_stock_page_header(stock: &Stock) -> (Box, (Label, Label, Label)) {
     (header, (change, high, low))
 }
 
+// TODO: make infobox width larger
 fn create_stock_page_chart_infobox() -> (Bin, Label, Label, Label) {
     let infobox = Bin::builder()
         .css_classes(["card", "infobox"])
@@ -565,7 +569,11 @@ fn create_stock_page_chart_infobox() -> (Bin, Label, Label, Label) {
     (infobox, time, quote, change)
 }
 
-fn create_stock_page_chart(state: &Rc<RefCell<Stock>>, change: &Label, high: &Label) -> Overlay {
+fn create_stock_page_chart(
+    state: &Rc<RefCell<Stock>>,
+    change: &Label,
+    high: &Label,
+) -> (Overlay, DrawingArea) {
     let cursor = Rc::new(RefCell::new(None));
     let time_zone = TimeZone::system();
 
@@ -653,7 +661,7 @@ fn create_stock_page_chart(state: &Rc<RefCell<Stock>>, change: &Label, high: &La
         );
     });
 
-    overlay
+    (overlay, chart)
 }
 
 // TODO: highlight selected range
@@ -728,17 +736,18 @@ fn create_stock_page(stock: Stock, range_default: &Rc<RefCell<Range>>) -> Naviga
     let (header, header_values) = create_stock_page_header(&stock);
     content.append(&header);
 
-    let chart = create_stock_page_chart(&state, &header_values.0, &header_values.1);
+    let (chart, chart_area) = create_stock_page_chart(&state, &header_values.0, &header_values.1);
     content.append(&chart);
 
     let ranges = create_stock_page_ranges(&stock, &sender, range_default);
     content.append(&ranges);
 
+    //
     glib::spawn_future_local(async move {
         while let Some(stock) = receiver.recv().await {
             update_stock_page_header_left(&stock, &header_values);
             *state.borrow_mut() = stock;
-            chart.queue_draw();
+            chart_area.queue_draw();
         }
     });
 

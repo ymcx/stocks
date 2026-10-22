@@ -6,12 +6,12 @@ use crate::{
 use adw::{
     AboutDialog, Application, ApplicationWindow, Bin, Breakpoint, BreakpointCondition,
     BreakpointConditionLengthType, Dialog, EntryRow, HeaderBar, LengthUnit, NavigationPage,
-    NavigationSplitView, NavigationView, PreferencesGroup, PreferencesPage, StatusPage,
-    ToolbarView,
+    NavigationSplitView, NavigationView, PreferencesGroup, PreferencesPage, StatusPage, Toggle,
+    ToggleGroup, ToolbarView,
     gtk::{
         Align, Box, Button, DragSource, DrawingArea, DropTarget, EventControllerMotion,
         GestureClick, Label, License, ListBox, ListBoxRow, MenuButton, Orientation, Overlay,
-        PolicyType, PopoverMenu, ScrolledWindow, WidgetPaintable,
+        PopoverMenu, ScrolledWindow, WidgetPaintable,
         cairo::{Context, FontSlant, FontWeight, LinearGradient},
         gdk::{ContentProvider, DragAction, RGBA, Rectangle},
         gio::{Menu, SimpleAction, SimpleActionGroup},
@@ -672,16 +672,15 @@ fn create_stock_page_chart(
     (overlay, chart)
 }
 
-// TODO: highlight selected range
 fn create_stock_page_ranges(
     stock: &Stock,
     sender: &Sender<Stock>,
     range_default: &Rc<RefCell<Range>>,
-) -> ScrolledWindow {
-    let ranges = Box::builder()
-        .orientation(Orientation::Horizontal)
+) -> ToggleGroup {
+    let ranges = ToggleGroup::builder()
+        .margin_start(16)
+        .margin_end(16)
         .homogeneous(true)
-        .spacing(8)
         .build();
 
     for range in [
@@ -694,30 +693,33 @@ fn create_stock_page_ranges(
         Range::FiveYears,
         Range::Max,
     ] {
-        let symbol = stock.symbol.clone();
-        let sender = sender.clone();
-        let button = Button::builder().label(range.as_str()).build();
-        ranges.append(&button);
-
-        let range_default = range_default.clone();
-        button.connect_clicked(move |_| {
-            *range_default.borrow_mut() = range;
-            let symbol = symbol.clone();
-            let sender = sender.clone();
-            let runtime = runtime();
-            runtime.spawn(Stock::fetch_and_send(symbol, range, sender));
-        });
+        let toggle = Toggle::builder()
+            .label(range.as_str())
+            .name(range.as_api_str())
+            .build();
+        ranges.add(toggle);
     }
 
-    let ranges_window = ScrolledWindow::builder()
-        .hscrollbar_policy(PolicyType::External)
-        .vscrollbar_policy(PolicyType::Never)
-        .margin_start(16)
-        .margin_end(16)
-        .child(&ranges)
-        .build();
+    ranges.set_active_name(Some(range_default.borrow().as_api_str()));
 
-    ranges_window
+    let symbol = stock.symbol.clone();
+    let range_default = range_default.clone();
+    let sender = sender.clone();
+    ranges.connect_notify_local(Some("active-name"), move |toggle_group, _| {
+        let Some(range) = toggle_group
+            .active_name()
+            .and_then(|range| Range::parse(&range))
+        else {
+            return;
+        };
+
+        *range_default.borrow_mut() = range;
+
+        let runtime = runtime();
+        runtime.spawn(Stock::fetch_and_send(symbol.clone(), range, sender.clone()));
+    });
+
+    ranges
 }
 
 fn create_stock_page(stock: Stock, range_default: &Rc<RefCell<Range>>) -> NavigationPage {

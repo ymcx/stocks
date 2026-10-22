@@ -7,9 +7,9 @@ pub struct Settings {
 }
 
 impl Settings {
-    pub fn new() -> Self {
+    pub fn new() -> Settings {
         let settings = gio::Settings::new(APP_ID);
-        Self { settings }
+        Settings { settings }
     }
 
     pub fn set_window_width(&self, width: i32) {
@@ -93,7 +93,7 @@ impl Settings {
 
     pub fn remove_bookmark(&self, index: usize) {
         let mut bookmarks = self.get_bookmarks();
-        bookmarks.remove(index as usize);
+        bookmarks.remove(index);
         self.set_bookmarks(bookmarks);
     }
 

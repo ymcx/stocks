@@ -37,11 +37,17 @@ struct State {
 
 impl State {
     fn new(settings: &Settings) -> State {
-        let mut state = State::default();
-        state.range = settings.get_last_range();
-        state.symbol = settings.get_last_stock();
+        let cursor = None;
+        let stock = None;
+        let range = settings.get_last_range();
+        let symbol = settings.get_last_stock();
 
-        state
+        State {
+            cursor,
+            range,
+            stock,
+            symbol,
+        }
     }
 }
 
@@ -63,17 +69,15 @@ fn create_placeholder_page() -> NavigationPage {
     toolbar_view.add_top_bar(&header_bar);
     toolbar_view.set_content(Some(&status_page));
 
-    let navigation_page = NavigationPage::builder()
+    NavigationPage::builder()
         .title(APP_NAME)
         .tag("home")
         .child(&toolbar_view)
-        .build();
-
-    navigation_page
+        .build()
 }
 
 fn create_about_dialog() -> AboutDialog {
-    let about_dialog = AboutDialog::builder()
+    AboutDialog::builder()
         .application_icon(APP_ID)
         .application_name(APP_NAME)
         .developer_name("ymcx")
@@ -81,9 +85,7 @@ fn create_about_dialog() -> AboutDialog {
         .license_type(License::MitX11)
         .version(APP_VERSION)
         .website("https://github.com/ymcx/stocks")
-        .build();
-
-    about_dialog
+        .build()
 }
 
 fn create_sidebar_button(sidebar: &ListBox, bookmark: &str, settings: &Settings) -> ListBoxRow {
@@ -240,9 +242,7 @@ fn create_sidebar_page(
         sidebar.append(&button);
     }
 
-    let navigation_page = NavigationPage::new(&toolbar_view, APP_NAME);
-
-    navigation_page
+    NavigationPage::new(&toolbar_view, APP_NAME)
 }
 
 fn create_add_dialog(settings: &Settings, sidebar: &ListBox) -> Dialog {
@@ -363,7 +363,7 @@ fn create_stock_page_header_title(long_name: &str) -> Box {
     container
 }
 
-fn stock_quote_high(quote_close: &Vec<f64>) -> f64 {
+fn stock_quote_high(quote_close: &[f64]) -> f64 {
     quote_close
         .iter()
         .copied()
@@ -371,7 +371,7 @@ fn stock_quote_high(quote_close: &Vec<f64>) -> f64 {
         .unwrap_or_default()
 }
 
-fn stock_quote_low(quote_close: &Vec<f64>) -> f64 {
+fn stock_quote_low(quote_close: &[f64]) -> f64 {
     quote_close
         .iter()
         .copied()
@@ -379,7 +379,7 @@ fn stock_quote_low(quote_close: &Vec<f64>) -> f64 {
         .unwrap_or_default()
 }
 
-fn stock_quote_change(quote_close: &Vec<f64>, start: Option<usize>, end: Option<usize>) -> f64 {
+fn stock_quote_change(quote_close: &[f64], start: Option<usize>, end: Option<usize>) -> f64 {
     let start = start.unwrap_or(0);
     let end = end.unwrap_or(quote_close.len() - 1);
 
@@ -390,7 +390,7 @@ fn stock_quote_change(quote_close: &Vec<f64>, start: Option<usize>, end: Option<
 }
 
 fn stock_quote_change_percent(
-    quote_close: &Vec<f64>,
+    quote_close: &[f64],
     start: Option<usize>,
     end: Option<usize>,
 ) -> f64 {
@@ -407,7 +407,7 @@ fn stock_quote_change_percent(
 }
 
 fn create_stock_page_header_price(
-    quote_close: &Vec<f64>,
+    quote_close: &[f64],
     regular_market_price: f64,
     currency: &str,
 ) -> (Box, Label) {
@@ -467,7 +467,7 @@ fn create_stock_page_header_metadata_item(label: &str, value: f64, decimals: boo
 }
 
 fn create_stock_page_header_metadata(
-    quote_close: &Vec<f64>,
+    quote_close: &[f64],
     regular_market_volume: i64,
 ) -> (Box, Label, Label) {
     let container = Box::builder()
@@ -491,7 +491,7 @@ fn create_stock_page_header_metadata(
 }
 
 fn update_stock_page_header_left(
-    quote_close: &Vec<f64>,
+    quote_close: &[f64],
     change_label: &Label,
     high_label: &Label,
     low_label: &Label,
@@ -510,7 +510,7 @@ fn update_stock_page_header_left(
 fn create_stock_page_header(
     long_name: &str,
     currency: &str,
-    quote_close: &Vec<f64>,
+    quote_close: &[f64],
     regular_market_price: f64,
     regular_market_volume: i64,
 ) -> (Box, Label, Label, Label) {
@@ -636,11 +636,11 @@ fn create_stock_page_chart(
         let color = if change_percent < 0.0 { "red" } else { "blue" };
         infobox_change_value.set_css_classes(&[color, "heading"]);
 
-        let quote_length = quote.to_string().len();
+        let quote_length = quote.abs().floor().to_string().len();
         let decimals = if quote_length < 4 { 2 } else { 0 };
         infobox_quote_value.set_text(&format!("{:.decimals$}", quote));
 
-        let change_percent_length = change_percent.to_string().len();
+        let change_percent_length = change_percent.abs().floor().to_string().len();
         let decimals = if change_percent_length < 4 { 2 } else { 0 };
         infobox_change_value.set_text(&format!("{:+.decimals$}%", change_percent));
 
@@ -841,12 +841,12 @@ fn draw_chart(
     cr: &Context,
     width: i32,
     height: i32,
-    quote_close: &Vec<f64>,
+    quote_close: &[f64],
     cursor: &Option<(f64, f64)>,
     color_change: RGBA,
     color_foreground: RGBA,
 ) {
-    if quote_close.len() == 0 || width == 0 || height == 0 {
+    if quote_close.is_empty() || width == 0 || height == 0 {
         return;
     }
 
@@ -1076,10 +1076,10 @@ fn build_ui(application: &Application) {
             state_value.borrow_mut().symbol = Some(stock.symbol.clone());
 
             let stock_page = create_stock_page(&state_value);
-            if let Some(visible_page) = navigation.visible_page() {
-                if visible_page.title() == stock_page.title() {
-                    continue;
-                }
+            if let Some(visible_page) = navigation.visible_page()
+                && visible_page.title() == stock_page.title()
+            {
+                continue;
             }
 
             navigation_value.push(&stock_page);
@@ -1097,7 +1097,6 @@ fn build_ui(application: &Application) {
 
 fn runtime() -> &'static Runtime {
     static RUNTIME: OnceLock<Runtime> = OnceLock::new();
-    let runtime = RUNTIME.get_or_init(|| Runtime::new().unwrap());
 
-    runtime
+    RUNTIME.get_or_init(|| Runtime::new().unwrap())
 }

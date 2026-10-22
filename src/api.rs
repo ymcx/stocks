@@ -23,49 +23,49 @@ pub enum Range {
 impl Range {
     pub fn as_api_str(&self) -> &str {
         match self {
-            Self::OneDay => "1d",
-            Self::FiveDays => "5d",
-            Self::OneMonth => "1mo",
-            Self::ThreeMonths => "3mo",
-            Self::SixMonths => "6mo",
-            Self::Ytd => "ytd",
-            Self::OneYear => "1y",
-            Self::TwoYears => "2y",
-            Self::FiveYears => "5y",
-            Self::TenYears => "10y",
-            Self::Max => "max",
+            Range::OneDay => "1d",
+            Range::FiveDays => "5d",
+            Range::OneMonth => "1mo",
+            Range::ThreeMonths => "3mo",
+            Range::SixMonths => "6mo",
+            Range::Ytd => "ytd",
+            Range::OneYear => "1y",
+            Range::TwoYears => "2y",
+            Range::FiveYears => "5y",
+            Range::TenYears => "10y",
+            Range::Max => "max",
         }
     }
 
     pub fn as_str(&self) -> &str {
         match self {
-            Self::OneDay => "1D",
-            Self::FiveDays => "5D",
-            Self::OneMonth => "1M",
-            Self::ThreeMonths => "3M",
-            Self::SixMonths => "6M",
-            Self::Ytd => "YTD",
-            Self::OneYear => "1Y",
-            Self::TwoYears => "2Y",
-            Self::FiveYears => "5Y",
-            Self::TenYears => "10Y",
-            Self::Max => "All",
+            Range::OneDay => "1D",
+            Range::FiveDays => "5D",
+            Range::OneMonth => "1M",
+            Range::ThreeMonths => "3M",
+            Range::SixMonths => "6M",
+            Range::Ytd => "YTD",
+            Range::OneYear => "1Y",
+            Range::TwoYears => "2Y",
+            Range::FiveYears => "5Y",
+            Range::TenYears => "10Y",
+            Range::Max => "All",
         }
     }
 
-    pub fn parse(string: &str) -> Option<Self> {
+    pub fn parse(string: &str) -> Option<Range> {
         match string {
-            "1D" | "1d" => Some(Self::OneDay),
-            "5D" | "5d" => Some(Self::FiveDays),
-            "1M" | "1mo" => Some(Self::OneMonth),
-            "3M" | "3mo" => Some(Self::ThreeMonths),
-            "6M" | "6mo" => Some(Self::SixMonths),
-            "YTD" | "ytd" => Some(Self::Ytd),
-            "1Y" | "1y" => Some(Self::OneYear),
-            "2Y" | "2y" => Some(Self::TwoYears),
-            "5Y" | "5y" => Some(Self::FiveYears),
-            "10Y" | "10y" => Some(Self::TenYears),
-            "All" | "max" => Some(Self::Max),
+            "1D" | "1d" => Some(Range::OneDay),
+            "5D" | "5d" => Some(Range::FiveDays),
+            "1M" | "1mo" => Some(Range::OneMonth),
+            "3M" | "3mo" => Some(Range::ThreeMonths),
+            "6M" | "6mo" => Some(Range::SixMonths),
+            "YTD" | "ytd" => Some(Range::Ytd),
+            "1Y" | "1y" => Some(Range::OneYear),
+            "2Y" | "2y" => Some(Range::TwoYears),
+            "5Y" | "5y" => Some(Range::FiveYears),
+            "10Y" | "10y" => Some(Range::TenYears),
+            "All" | "max" => Some(Range::Max),
             _ => None,
         }
     }
@@ -76,17 +76,17 @@ impl Range {
     // gazillion points and is of little benefit.
     pub fn get_interval(&self) -> Option<Interval> {
         match self {
-            Self::OneDay => Some(Interval::OneMinute), // Interval::OneMinute
-            Self::FiveDays => Some(Interval::FiveMinutes), // Interval::OneMinute
-            Self::OneMonth => Some(Interval::ThirtyMinutes), // Interval::TwoMinutes
-            Self::ThreeMonths => Some(Interval::NinetyMinutes), // Interval::OneHour
-            Self::SixMonths => Some(Interval::OneHour), // Interval::OneHour
-            Self::Ytd => Some(Interval::FourHours),    // Interval::OneHour
-            Self::OneYear => Some(Interval::FourHours), // Interval::OneHour
-            Self::TwoYears => Some(Interval::FourHours), // Interval::OneHour
-            Self::FiveYears => Some(Interval::OneDay), // Interval::OneDay
-            Self::TenYears => Some(Interval::OneDay),  // Interval::OneDay
-            Self::Max => None,
+            Range::OneDay => Some(Interval::OneMinute), // Interval::OneMinute
+            Range::FiveDays => Some(Interval::FiveMinutes), // Interval::OneMinute
+            Range::OneMonth => Some(Interval::ThirtyMinutes), // Interval::TwoMinutes
+            Range::ThreeMonths => Some(Interval::NinetyMinutes), // Interval::OneHour
+            Range::SixMonths => Some(Interval::OneHour), // Interval::OneHour
+            Range::Ytd => Some(Interval::FourHours),    // Interval::OneHour
+            Range::OneYear => Some(Interval::FourHours), // Interval::OneHour
+            Range::TwoYears => Some(Interval::FourHours), // Interval::OneHour
+            Range::FiveYears => Some(Interval::OneDay), // Interval::OneDay
+            Range::TenYears => Some(Interval::OneDay),  // Interval::OneDay
+            Range::Max => None,
         }
     }
 }
@@ -114,39 +114,39 @@ pub enum Interval {
 impl Interval {
     pub fn as_api_str(&self) -> &str {
         match self {
-            Self::OneMinute => "1m",
-            Self::TwoMinutes => "2m",
-            Self::FiveMinutes => "5m",
-            Self::FifteenMinutes => "15m",
-            Self::ThirtyMinutes => "30m",
-            Self::SixtyMinutes => "60m",
-            Self::NinetyMinutes => "90m",
-            Self::OneHour => "1h",
-            Self::FourHours => "4h",
-            Self::OneDay => "1d",
-            Self::FiveDays => "5d",
-            Self::OneWeek => "1wk",
-            Self::OneMonth => "1mo",
-            Self::ThreeMonths => "3mo",
+            Interval::OneMinute => "1m",
+            Interval::TwoMinutes => "2m",
+            Interval::FiveMinutes => "5m",
+            Interval::FifteenMinutes => "15m",
+            Interval::ThirtyMinutes => "30m",
+            Interval::SixtyMinutes => "60m",
+            Interval::NinetyMinutes => "90m",
+            Interval::OneHour => "1h",
+            Interval::FourHours => "4h",
+            Interval::OneDay => "1d",
+            Interval::FiveDays => "5d",
+            Interval::OneWeek => "1wk",
+            Interval::OneMonth => "1mo",
+            Interval::ThreeMonths => "3mo",
         }
     }
 
-    pub fn parse(string: &str) -> Option<Self> {
+    pub fn parse(string: &str) -> Option<Interval> {
         match string {
-            "1m" => Some(Self::OneMinute),
-            "2m" => Some(Self::TwoMinutes),
-            "5m" => Some(Self::FiveMinutes),
-            "15m" => Some(Self::FifteenMinutes),
-            "30m" => Some(Self::ThirtyMinutes),
-            "60m" => Some(Self::SixtyMinutes),
-            "90m" => Some(Self::NinetyMinutes),
-            "1h" => Some(Self::OneHour),
-            "4h" => Some(Self::FourHours),
-            "1d" => Some(Self::OneDay),
-            "5d" => Some(Self::FiveDays),
-            "1wk" => Some(Self::OneWeek),
-            "1mo" => Some(Self::OneMonth),
-            "3mo" => Some(Self::ThreeMonths),
+            "1m" => Some(Interval::OneMinute),
+            "2m" => Some(Interval::TwoMinutes),
+            "5m" => Some(Interval::FiveMinutes),
+            "15m" => Some(Interval::FifteenMinutes),
+            "30m" => Some(Interval::ThirtyMinutes),
+            "60m" => Some(Interval::SixtyMinutes),
+            "90m" => Some(Interval::NinetyMinutes),
+            "1h" => Some(Interval::OneHour),
+            "4h" => Some(Interval::FourHours),
+            "1d" => Some(Interval::OneDay),
+            "5d" => Some(Interval::FiveDays),
+            "1wk" => Some(Interval::OneWeek),
+            "1mo" => Some(Interval::OneMonth),
+            "3mo" => Some(Interval::ThreeMonths),
             _ => None,
         }
     }
@@ -162,9 +162,9 @@ pub struct TradingPeriod {
 }
 
 impl TradingPeriod {
-    pub fn new(timezone: &str, start: i64, end: i64, gmtoffset: i64) -> Self {
+    pub fn new(timezone: &str, start: i64, end: i64, gmtoffset: i64) -> TradingPeriod {
         let timezone = timezone.to_string();
-        Self {
+        TradingPeriod {
             timezone,
             start,
             end,
@@ -172,12 +172,12 @@ impl TradingPeriod {
         }
     }
 
-    pub fn parse(json: &Value) -> Option<Self> {
+    pub fn parse(json: &Value) -> Option<TradingPeriod> {
         let timezone = json.get("timezone")?.as_str()?;
         let start = json.get("start")?.as_i64()?;
         let end = json.get("end")?.as_i64()?;
         let gmtoffset = json.get("gmtoffset")?.as_i64()?;
-        let trading_period = Self::new(timezone, start, end, gmtoffset);
+        let trading_period = TradingPeriod::new(timezone, start, end, gmtoffset);
 
         Some(trading_period)
     }
@@ -226,119 +226,29 @@ pub struct Stock {
 }
 
 impl Stock {
-    pub fn new(
-        currency: &str,
-        symbol: &str,
-        exchange_name: &str,
-        full_exchange_name: &str,
-        instrument_type: &str,
-        first_trade_date: i64,
-        regular_market_time: i64,
-        has_pre_post_market_data: bool,
-        gmtoffset: i64,
-        timezone: &str,
-        exchange_timezone_name: &str,
-        regular_market_price: f64,
-        regular_market_change_percent: f64,
-        fullday_price: f64,
-        fullday_change: f64,
-        fullday_change_percent: f64,
-        fifty_two_week_high: f64,
-        fifty_two_week_low: f64,
-        regular_market_day_high: f64,
-        regular_market_day_low: f64,
-        regular_market_volume: i64,
-        long_name: &str,
-        short_name: &str,
-        chart_previous_close: f64,
-        price_hint: i64,
-        current_trading_period_pre: TradingPeriod,
-        current_trading_period_regular: TradingPeriod,
-        current_trading_period_post: TradingPeriod,
-        data_granularity: Interval,
-        range: Range,
-        valid_ranges: Vec<Range>,
-        timestamp: Vec<i64>,
-        quote_low: Vec<f64>,
-        quote_volume: Vec<i64>,
-        quote_close: Vec<f64>,
-        quote_open: Vec<f64>,
-        quote_high: Vec<f64>,
-    ) -> Self {
-        let currency = currency.to_string();
-        let symbol = symbol.to_string();
-        let exchange_name = exchange_name.to_string();
-        let full_exchange_name = full_exchange_name.to_string();
-        let instrument_type = instrument_type.to_string();
-        let timezone = timezone.to_string();
-        let exchange_timezone_name = exchange_timezone_name.to_string();
-        let long_name = long_name.to_string();
-        let short_name = short_name.to_string();
-
-        Self {
-            currency,
-            symbol,
-            exchange_name,
-            full_exchange_name,
-            instrument_type,
-            first_trade_date,
-            regular_market_time,
-            has_pre_post_market_data,
-            gmtoffset,
-            timezone,
-            exchange_timezone_name,
-            regular_market_price,
-            regular_market_change_percent,
-            fullday_price,
-            fullday_change,
-            fullday_change_percent,
-            fifty_two_week_high,
-            fifty_two_week_low,
-            regular_market_day_high,
-            regular_market_day_low,
-            regular_market_volume,
-            long_name,
-            short_name,
-            chart_previous_close,
-            price_hint,
-            current_trading_period_pre,
-            current_trading_period_regular,
-            current_trading_period_post,
-            data_granularity,
-            range,
-            valid_ranges,
-            timestamp,
-            quote_low,
-            quote_volume,
-            quote_close,
-            quote_open,
-            quote_high,
-        }
-    }
-
-    pub fn parse(text: &str) -> Option<Self> {
+    pub fn parse(text: &str) -> Option<Stock> {
         let json: Value = serde_json::from_str(text).ok()?;
         let result = json.get("chart")?.get("result")?.get(0)?;
         let meta = result.get("meta")?;
         let timestamp = result
             .get("timestamp")?
             .as_array()?
-            .into_iter()
+            .iter()
             .filter_map(Value::as_i64)
             .collect();
         let quote = result.get("indicators")?.get("quote")?.get(0)?;
 
-        let currency = meta.get("currency")?.as_str()?;
-        let symbol = meta.get("symbol")?.as_str()?;
-        let exchange_name = meta.get("exchangeName")?.as_str()?;
-        let full_exchange_name = meta.get("fullExchangeName")?.as_str()?;
-        let instrument_type = meta.get("instrumentType")?.as_str()?;
+        let currency = meta.get("currency")?.as_str()?.to_string();
+        let symbol = meta.get("symbol")?.as_str()?.to_string();
+        let exchange_name = meta.get("exchangeName")?.as_str()?.to_string();
+        let full_exchange_name = meta.get("fullExchangeName")?.as_str()?.to_string();
+        let instrument_type = meta.get("instrumentType")?.as_str()?.to_string();
         let first_trade_date = meta.get("firstTradeDate")?.as_i64()?;
         let regular_market_time = meta.get("regularMarketTime")?.as_i64()?;
         let has_pre_post_market_data = meta.get("hasPrePostMarketData")?.as_bool()?;
         let gmtoffset = meta.get("gmtoffset")?.as_i64()?;
-        let timezone = meta.get("timezone")?.as_str()?;
-        let exchange_timezone_name = meta.get("exchangeTimezoneName")?.as_str()?;
+        let timezone = meta.get("timezone")?.as_str()?.to_string();
+        let exchange_timezone_name = meta.get("exchangeTimezoneName")?.as_str()?.to_string();
         let regular_market_price = meta.get("regularMarketPrice")?.as_f64()?;
         let regular_market_change_percent = meta.get("regularMarketChangePercent")?.as_f64()?;
         let fullday_price = meta.get("fulldayPrice")?.as_f64()?;
@@ -349,8 +259,8 @@ impl Stock {
         let regular_market_day_high = meta.get("regularMarketDayHigh")?.as_f64()?;
         let regular_market_day_low = meta.get("regularMarketDayLow")?.as_f64()?;
         let regular_market_volume = meta.get("regularMarketVolume")?.as_i64()?;
-        let long_name = meta.get("longName")?.as_str()?;
-        let short_name = meta.get("shortName")?.as_str()?;
+        let long_name = meta.get("longName")?.as_str()?.to_string();
+        let short_name = meta.get("shortName")?.as_str()?.to_string();
         let chart_previous_close = meta.get("chartPreviousClose")?.as_f64()?;
         let price_hint = meta.get("priceHint")?.as_i64()?;
         let current_trading_period = meta.get("currentTradingPeriod")?;
@@ -364,42 +274,42 @@ impl Stock {
         let valid_ranges = meta
             .get("validRanges")?
             .as_array()?
-            .into_iter()
+            .iter()
             .filter_map(|i| Range::parse(i.as_str().unwrap_or_default()))
             .collect();
 
         let quote_low = quote
             .get("low")?
             .as_array()?
-            .into_iter()
+            .iter()
             .filter_map(Value::as_f64)
             .collect();
         let quote_volume = quote
             .get("volume")?
             .as_array()?
-            .into_iter()
+            .iter()
             .filter_map(Value::as_i64)
             .collect();
         let quote_close = quote
             .get("close")?
             .as_array()?
-            .into_iter()
+            .iter()
             .filter_map(Value::as_f64)
             .collect();
         let quote_open = quote
             .get("open")?
             .as_array()?
-            .into_iter()
+            .iter()
             .filter_map(Value::as_f64)
             .collect();
         let quote_high = quote
             .get("high")?
             .as_array()?
-            .into_iter()
+            .iter()
             .filter_map(Value::as_f64)
             .collect();
 
-        let stock = Self::new(
+        let stock = Stock {
             currency,
             symbol,
             exchange_name,
@@ -437,12 +347,12 @@ impl Stock {
             quote_close,
             quote_open,
             quote_high,
-        );
+        };
 
         Some(stock)
     }
 
-    pub async fn fetch(symbol: &str, range: Range) -> Option<Self> {
+    pub async fn fetch(symbol: &str, range: Range) -> Option<Stock> {
         let base = "https://query1.finance.yahoo.com/v8/finance/chart";
         let url = if let Some(interval) = range.get_interval() {
             let range = range.as_api_str();
@@ -457,11 +367,11 @@ impl Stock {
         let response = client.get(url).send().await.ok()?;
         let text = response.text().await.ok()?;
 
-        Self::parse(&text)
+        Stock::parse(&text)
     }
 
-    pub async fn fetch_and_send(symbol: String, range: Range, sender: Sender<Self>) {
-        if let Some(stock) = Self::fetch(&symbol, range).await {
+    pub async fn fetch_and_send(symbol: String, range: Range, sender: Sender<Stock>) {
+        if let Some(stock) = Stock::fetch(&symbol, range).await {
             let _ = sender.send(stock).await;
         }
     }
@@ -470,7 +380,6 @@ impl Stock {
 fn client() -> &'static Client {
     static CLIENT: OnceLock<Client> = OnceLock::new();
     let user_agent = "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36";
-    let client = CLIENT.get_or_init(|| Client::builder().user_agent(user_agent).build().unwrap());
 
-    client
+    CLIENT.get_or_init(|| Client::builder().user_agent(user_agent).build().unwrap())
 }

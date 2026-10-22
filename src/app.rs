@@ -515,7 +515,6 @@ fn create_stock_page_header(stock: &Stock) -> (Box, (Label, Label, Label)) {
     (header, (change, high, low))
 }
 
-// TODO: make infobox width larger
 fn create_stock_page_chart_infobox() -> (Bin, Label, Label, Label) {
     let infobox = Bin::builder()
         .css_classes(["card", "infobox"])
@@ -547,7 +546,7 @@ fn create_stock_page_chart_infobox() -> (Bin, Label, Label, Label) {
 
     let subcontainer = Box::builder()
         .orientation(Orientation::Horizontal)
-        .spacing(8)
+        .spacing(4)
         .build();
     container.append(&subcontainer);
 
@@ -612,17 +611,26 @@ fn create_stock_page_chart(
             let color = if change < 0.0 { "red" } else { "blue" };
             infobox_change_value.set_css_classes(&[color, "heading"]);
 
-            let quote = format!("{:.2}", quote);
+            let decimals = if quote.floor().to_string().len() < 4 {
+                2
+            } else {
+                0
+            };
+            let quote = format!("{:.decimals$}", quote);
             infobox_quote_value.set_text(&quote);
 
-            let change = format!("{:+.2}%", change * 100.0);
+            let decimals = if (change * 100.0).floor().to_string().len() < 4 {
+                2
+            } else {
+                0
+            };
+            let change = format!("{:+.decimals$}%", change * 100.0);
             infobox_change_value.set_text(&change);
 
-            // TODO: fix time formatting
             if let Ok(time) = Timestamp::from_second(time) {
                 let time = time_zone
                     .to_datetime(time)
-                    .strftime("%d/%m/%y %X")
+                    .strftime("%m/%d/%Y %I:%M %p")
                     .to_string();
                 infobox_time_value.set_text(&time);
             }

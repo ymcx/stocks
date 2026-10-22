@@ -92,12 +92,13 @@ impl Range {
 }
 
 #[allow(dead_code)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub enum Interval {
     OneMinute,
     TwoMinutes,
     FiveMinutes,
     FifteenMinutes,
+    #[default]
     ThirtyMinutes,
     SixtyMinutes,
     NinetyMinutes,
@@ -152,7 +153,7 @@ impl Interval {
 }
 
 #[allow(dead_code)]
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct TradingPeriod {
     pub timezone: String,
     pub start: i64,
@@ -183,7 +184,7 @@ impl TradingPeriod {
 }
 
 #[allow(dead_code)]
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Stock {
     pub currency: String,
     pub symbol: String,

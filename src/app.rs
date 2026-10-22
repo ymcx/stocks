@@ -27,10 +27,28 @@ use tokio::{
     sync::mpsc::{self, Sender},
 };
 
+#[derive(Clone, Default)]
+struct State {
+    cursor: Option<(f64, f64)>,
+    range: Option<Range>,
+    stock: Option<Stock>,
+    symbol: Option<String>,
+}
+
+impl State {
+    fn new(settings: &Settings) -> State {
+        let mut state = State::default();
+        state.range = settings.get_last_range();
+        state.symbol = settings.get_last_stock();
+
+        state
+    }
+}
+
 pub fn run() -> ExitCode {
-    let app = Application::builder().application_id(APP_ID).build();
-    app.connect_activate(build_ui);
-    app.run()
+    let application = Application::builder().application_id(APP_ID).build();
+    application.connect_activate(build_ui);
+    application.run()
 }
 
 fn create_placeholder_page() -> NavigationPage {
@@ -96,10 +114,11 @@ fn create_sidebar_button(sidebar: &ListBox, bookmark: &str, settings: &Settings)
     popover_menu.set_parent(&list_box_row);
 
     let gesture_click = GestureClick::builder().button(3).build();
+    let popover_menu_value = popover_menu.clone();
     gesture_click.connect_pressed(move |_, _, x, y| {
         let rectangle = Rectangle::new(x as i32, y as i32, 120, 0);
-        popover_menu.set_pointing_to(Some(&rectangle));
-        popover_menu.popup();
+        popover_menu_value.set_pointing_to(Some(&rectangle));
+        popover_menu_value.popup();
     });
     list_box_row.add_controller(gesture_click);
 
@@ -107,69 +126,65 @@ fn create_sidebar_button(sidebar: &ListBox, bookmark: &str, settings: &Settings)
     list_box_row.insert_action_group("row", Some(&simple_action_group));
 
     let simple_action = SimpleAction::new("delete", None);
-    simple_action.connect_activate({
-        let list_box_row = list_box_row.clone();
-        let settings = settings.clone();
-        let sidebar = sidebar.clone();
-        move |_, _| {
-            let index = list_box_row.index() as usize;
-            let is_current_or_home = sidebar.selected_row().is_none_or(|i| i == list_box_row);
-            if is_current_or_home {
-                glib::idle_add_local_once({
-                    let sidebar = sidebar.clone();
-                    move || {
-                        sidebar.unselect_all();
-                    }
-                });
-            }
+    let list_box_row_value = list_box_row.clone();
+    let settings_value = settings.clone();
+    let sidebar_value = sidebar.clone();
+    simple_action.connect_activate(move |_, _| {
+        let index = list_box_row_value.index() as usize;
+        let is_current_or_home = sidebar_value
+            .selected_row()
+            .is_none_or(|i| i == list_box_row_value);
 
-            sidebar.remove(&list_box_row);
-            settings.remove_bookmark(index);
+        if is_current_or_home {
+            let sidebar_value_value = sidebar_value.clone();
+            glib::idle_add_local_once(move || {
+                sidebar_value_value.unselect_all();
+            });
         }
+
+        sidebar_value.remove(&list_box_row_value);
+        settings_value.remove_bookmark(index);
     });
     simple_action_group.add_action(&simple_action);
 
     let drag_source = DragSource::builder().actions(DragAction::MOVE).build();
-    drag_source.connect_prepare({
-        let value = list_box_row.to_value();
-        move |_, _, _| {
-            let content_provider = ContentProvider::for_value(&value);
-            Some(content_provider)
-        }
+    let list_box_row_value = list_box_row.clone();
+    drag_source.connect_prepare(move |_, _, _| {
+        let content_provider = ContentProvider::for_value(&list_box_row_value.to_value());
+        Some(content_provider)
     });
+    let row_box_value = row_box.clone();
     drag_source.connect_drag_begin(move |drag_source, _| {
-        let widget_paintable = WidgetPaintable::new(Some(&row_box));
+        let widget_paintable = WidgetPaintable::new(Some(&row_box_value));
         drag_source.set_icon(Some(&widget_paintable), -15, -15);
     });
     list_box_row.add_controller(drag_source);
 
     let drop_target = DropTarget::new(ListBoxRow::static_type(), DragAction::MOVE);
-    drop_target.connect_drop({
-        let sidebar = sidebar.clone();
-        let settings = settings.clone();
-        move |target, source, _, _| {
-            let Ok(source_row) = source.get::<ListBoxRow>() else {
-                return false;
-            };
-            let Some(target_row) = target
-                .widget()
-                .and_then(|i| i.downcast::<ListBoxRow>().ok())
-            else {
-                return false;
-            };
+    let sidebar_value = sidebar.clone();
+    let settings_value = settings.clone();
+    drop_target.connect_drop(move |target, source, _, _| {
+        let Ok(source_row) = source.get::<ListBoxRow>() else {
+            return false;
+        };
+        let Some(target_row) = target
+            .widget()
+            .and_then(|i| i.downcast::<ListBoxRow>().ok())
+        else {
+            return false;
+        };
 
-            let source_index = source_row.index() as usize;
-            let target_index = target_row.index() as usize;
-            if source_index == target_index {
-                return true;
-            }
-
-            sidebar.remove(&source_row);
-            sidebar.insert(&source_row, target_index as i32);
-            settings.reorder_bookmarks(source_index, target_index);
-
-            true
+        let source_index = source_row.index();
+        let target_index = target_row.index();
+        if source_index == target_index {
+            return true;
         }
+
+        sidebar_value.remove(&source_row);
+        sidebar_value.insert(&source_row, target_index);
+        settings_value.reorder_bookmarks(source_index as usize, target_index as usize);
+
+        true
     });
     list_box_row.add_controller(drop_target);
 
@@ -180,7 +195,7 @@ fn create_sidebar_page(
     sidebar: &ListBox,
     settings: &Settings,
     sender: &Sender<Stock>,
-    range_default: &Rc<RefCell<Range>>,
+    state: &Rc<RefCell<State>>,
 ) -> NavigationPage {
     let toolbar_view = ToolbarView::new();
 
@@ -207,20 +222,16 @@ fn create_sidebar_page(
         .build();
     header_bar.pack_end(&menu_button);
 
-    sidebar.connect_row_activated({
-        let sender = sender.clone();
-        let settings = settings.clone();
-        let range_default = range_default.clone();
-        move |_, list_box_row| {
-            let bookmarks = settings.get_bookmarks();
-            let index = list_box_row.index() as usize;
-            if let Some(bookmark) = bookmarks.get(index) {
-                let bookmark = bookmark.clone();
-                let sender = sender.clone();
-                let range_default = *range_default.borrow();
-                let runtime = runtime();
-                runtime.spawn(Stock::fetch_and_send(bookmark, range_default, sender));
-            }
+    let state_value = state.clone();
+    let sender_value = sender.clone();
+    let settings_value = settings.clone();
+    sidebar.connect_row_activated(move |_, list_box_row| {
+        let bookmarks = settings_value.get_bookmarks();
+        let index = list_box_row.index();
+        let range = state_value.borrow().range.unwrap_or_default();
+        if let Some(bookmark) = bookmarks.get(index as usize) {
+            let future = Stock::fetch_and_send(bookmark.clone(), range, sender_value.clone());
+            runtime().spawn(future);
         }
     });
 
@@ -251,14 +262,12 @@ fn create_add_dialog(settings: &Settings, sidebar: &ListBox) -> Dialog {
         .title("Stock Symbol")
         .activates_default(true)
         .build();
-    entry_row.connect_changed({
-        let entry = entry_row.clone();
-        let button_add = button_add.clone();
-        move |_| {
-            let empty = entry.text().is_empty();
-            button_add.set_sensitive(!empty);
-            entry.remove_css_class("error");
-        }
+    let entry_row_value = entry_row.clone();
+    let button_add_value = button_add.clone();
+    entry_row.connect_changed(move |_| {
+        let empty = entry_row_value.text().is_empty();
+        button_add_value.set_sensitive(!empty);
+        entry_row_value.remove_css_class("error");
     });
     preferences_group.add(&entry_row);
 
@@ -282,44 +291,42 @@ fn create_add_dialog(settings: &Settings, sidebar: &ListBox) -> Dialog {
         .child(&toolbar)
         .build();
 
-    button_add.connect_clicked({
-        let dialog = dialog.clone();
-        let settings = settings.clone();
-        let sidebar = sidebar.clone();
-        let entry_row = entry_row.clone();
-        move |_| {
-            let bookmark = entry_row.text().trim().to_uppercase();
-            if bookmark.is_empty() || settings.find_bookmark(&bookmark).is_some() {
-                entry_row.add_css_class("error");
-                entry_row.grab_focus();
+    let dialog_value = dialog.clone();
+    let settings_value = settings.clone();
+    let sidebar_value = sidebar.clone();
+    let entry_row_value = entry_row.clone();
+    button_add.connect_clicked(move |_| {
+        let bookmark = entry_row_value.text().trim().to_uppercase();
+        if bookmark.is_empty() || settings_value.find_bookmark(&bookmark).is_some() {
+            entry_row_value.add_css_class("error");
+            entry_row_value.grab_focus();
+            return;
+        }
+
+        let (sender, mut receiver) = mpsc::channel(1);
+        let range = Range::default();
+        let future = Stock::fetch_and_send(bookmark.clone(), range, sender);
+        runtime().spawn(future);
+
+        let dialog_value_value = dialog_value.clone();
+        let settings_value_value = settings_value.clone();
+        let sidebar_value_value = sidebar_value.clone();
+        let entry_row_value_value = entry_row_value.clone();
+        let bookmark_value = bookmark.clone();
+        glib::spawn_future_local(async move {
+            let stock = receiver.recv().await;
+            if stock.is_none() {
+                entry_row_value_value.add_css_class("error");
+                entry_row_value_value.grab_focus();
                 return;
             }
 
-            let (sender, mut receiver) = mpsc::channel(1);
-            let range = Range::OneMonth;
-            let runtime = runtime();
-            runtime.spawn(Stock::fetch_and_send(bookmark.clone(), range, sender));
-
-            glib::spawn_future_local({
-                let dialog = dialog.clone();
-                let settings = settings.clone();
-                let sidebar = sidebar.clone();
-                let entry_row = entry_row.clone();
-                async move {
-                    let stock = receiver.recv().await;
-                    if stock.is_none() {
-                        entry_row.add_css_class("error");
-                        entry_row.grab_focus();
-                        return;
-                    }
-
-                    let button = create_sidebar_button(&sidebar, &bookmark, &settings);
-                    sidebar.append(&button);
-                    settings.add_bookmark(&bookmark);
-                    dialog.close();
-                }
-            });
-        }
+            let button =
+                create_sidebar_button(&sidebar_value_value, &bookmark_value, &settings_value_value);
+            sidebar_value_value.append(&button);
+            settings_value_value.add_bookmark(&bookmark_value);
+            dialog_value_value.close();
+        });
     });
     header.pack_end(&button_add);
     dialog.set_default_widget(Some(&button_add));
@@ -328,101 +335,103 @@ fn create_add_dialog(settings: &Settings, sidebar: &ListBox) -> Dialog {
         .label("_Cancel")
         .use_underline(true)
         .build();
-    button_cancel.connect_clicked({
-        let dialog = dialog.clone();
-        move |_| {
-            dialog.close();
-        }
+    let dialog_value = dialog.clone();
+    button_cancel.connect_clicked(move |_| {
+        dialog_value.close();
     });
     header.pack_start(&button_cancel);
 
+    let entry_row_value = entry_row.clone();
     dialog.connect_map(move |_| {
-        entry_row.set_text("");
-        entry_row.grab_focus();
+        entry_row_value.set_text("");
+        entry_row_value.grab_focus();
     });
 
     dialog
 }
 
-fn create_stock_page_header_title(stock: &Stock) -> Box {
+fn create_stock_page_header_title(long_name: &str) -> Box {
     let container = Box::builder().build();
 
-    let title = stock.long_name.to_string();
     let title = Label::builder()
         .css_classes(["title-1"])
         .ellipsize(EllipsizeMode::End)
-        .label(title)
+        .label(long_name)
         .build();
     container.append(&title);
 
     container
 }
 
-fn stock_quote_high(stock: &Stock) -> f64 {
-    let quotes = if stock.quote_high.is_empty() {
-        &stock.quote_close
-    } else {
-        &stock.quote_high
-    };
-    quotes
+fn stock_quote_high(quote_close: &Vec<f64>) -> f64 {
+    quote_close
         .iter()
         .copied()
         .max_by(f64::total_cmp)
         .unwrap_or_default()
 }
 
-fn stock_quote_low(stock: &Stock) -> f64 {
-    let quotes = if stock.quote_low.is_empty() {
-        &stock.quote_close
-    } else {
-        &stock.quote_low
-    };
-    quotes
+fn stock_quote_low(quote_close: &Vec<f64>) -> f64 {
+    quote_close
         .iter()
         .copied()
         .min_by(f64::total_cmp)
         .unwrap_or_default()
 }
 
-fn stock_quote_change(stock: &Stock) -> f64 {
-    let first = stock.quote_close.first().copied().unwrap_or_default();
-    let last = stock.quote_close.last().copied().unwrap_or_default();
+fn stock_quote_change(quote_close: &Vec<f64>, start: Option<usize>, end: Option<usize>) -> f64 {
+    let start = start.unwrap_or(0);
+    let end = end.unwrap_or(quote_close.len() - 1);
+
+    let first = quote_close.get(start).copied().unwrap_or_default();
+    let last = quote_close.get(end).copied().unwrap_or_default();
+
     last - first
 }
 
-fn stock_quote_change_percent(stock: &Stock) -> f64 {
-    let first = stock.quote_close.first().copied().unwrap_or_default();
-    let last = stock.quote_close.last().copied().unwrap_or_default();
-    if first != 0.0 {
-        (last / first - 1.0) * 100.0
-    } else {
-        0.0
+fn stock_quote_change_percent(
+    quote_close: &Vec<f64>,
+    start: Option<usize>,
+    end: Option<usize>,
+) -> f64 {
+    let start = start.unwrap_or(0);
+    let end = end.unwrap_or(quote_close.len() - 1);
+
+    let first = quote_close.get(start).copied().unwrap_or_default();
+    let last = quote_close.get(end).copied().unwrap_or_default();
+    if first == 0.0 {
+        return 0.0;
     }
+
+    (last / first - 1.0) * 100.0
 }
 
-fn create_stock_page_header_price(stock: &Stock) -> (Box, Label) {
+fn create_stock_page_header_price(
+    quote_close: &Vec<f64>,
+    regular_market_price: f64,
+    currency: &str,
+) -> (Box, Label) {
     let container = Box::builder()
         .orientation(Orientation::Horizontal)
         .spacing(8)
         .build();
 
-    let price = format!("{:.2} {}", stock.regular_market_price, stock.currency);
+    let price = format!("{:.2} {}", regular_market_price, currency);
     let price = Label::builder()
         .css_classes(["title-1"])
         .label(price)
         .build();
     container.append(&price);
 
-    let color = if stock_quote_change(stock) < 0.0 {
+    let color = if stock_quote_change(quote_close, None, None) < 0.0 {
         "red"
     } else {
         "blue"
     };
-
     let change = format!(
         "{:+.2} ({:+.2}%)",
-        stock_quote_change(stock),
-        stock_quote_change_percent(stock)
+        stock_quote_change(quote_close, None, None),
+        stock_quote_change_percent(quote_close, None, None)
     );
     let change = Label::builder()
         .css_classes([color, "title-1"])
@@ -446,11 +455,8 @@ fn create_stock_page_header_metadata_item(label: &str, value: f64, decimals: boo
         .build();
     container.append(&label);
 
-    let value = if decimals {
-        format!("{:.2}", value)
-    } else {
-        value.to_string()
-    };
+    let decimals = if decimals { 2 } else { 0 };
+    let value = format!("{:.decimals$}", value);
     let value_label = Label::builder()
         .css_classes(["heading"])
         .label(value)
@@ -460,42 +466,54 @@ fn create_stock_page_header_metadata_item(label: &str, value: f64, decimals: boo
     (container, value_label)
 }
 
-fn create_stock_page_header_metadata(stock: &Stock) -> (Box, (Label, Label)) {
+fn create_stock_page_header_metadata(
+    quote_close: &Vec<f64>,
+    regular_market_volume: i64,
+) -> (Box, Label, Label) {
     let container = Box::builder()
         .orientation(Orientation::Horizontal)
         .spacing(8)
         .build();
 
     let (high, high_value) =
-        create_stock_page_header_metadata_item("High", stock_quote_high(stock), true);
+        create_stock_page_header_metadata_item("High", stock_quote_high(quote_close), true);
     container.append(&high);
 
     let (low, low_value) =
-        create_stock_page_header_metadata_item("Low", stock_quote_low(stock), true);
+        create_stock_page_header_metadata_item("Low", stock_quote_low(quote_close), true);
     container.append(&low);
 
-    let volume = stock.regular_market_volume as f64;
-    let (volume, _) = create_stock_page_header_metadata_item("Volume", volume, false);
+    let (volume, _) =
+        create_stock_page_header_metadata_item("Volume", regular_market_volume as f64, false);
     container.append(&volume);
 
-    (container, (high_value, low_value))
+    (container, high_value, low_value)
 }
 
-fn update_stock_page_header_left(stock: &Stock, values: &(Label, Label, Label)) {
-    let (change_label, high_label, low_label) = values;
-
-    let change = stock_quote_change(stock);
-    let percent = stock_quote_change_percent(stock);
+fn update_stock_page_header_left(
+    quote_close: &Vec<f64>,
+    change_label: &Label,
+    high_label: &Label,
+    low_label: &Label,
+) {
+    let change = stock_quote_change(quote_close, None, None);
+    let percent = stock_quote_change_percent(quote_close, None, None);
     let color = if change < 0.0 { "red" } else { "blue" };
 
     change_label.set_css_classes(&[color, "title-1"]);
     change_label.set_text(&format!("{:+.2} ({:+.2}%)", change, percent));
 
-    high_label.set_text(&format!("{:.2}", stock_quote_high(stock)));
-    low_label.set_text(&format!("{:.2}", stock_quote_low(stock)));
+    high_label.set_text(&format!("{:.2}", stock_quote_high(quote_close)));
+    low_label.set_text(&format!("{:.2}", stock_quote_low(quote_close)));
 }
 
-fn create_stock_page_header(stock: &Stock) -> (Box, (Label, Label, Label)) {
+fn create_stock_page_header(
+    long_name: &str,
+    currency: &str,
+    quote_close: &Vec<f64>,
+    regular_market_price: f64,
+    regular_market_volume: i64,
+) -> (Box, Label, Label, Label) {
     let header = Box::builder()
         .orientation(Orientation::Vertical)
         .margin_start(16)
@@ -503,16 +521,18 @@ fn create_stock_page_header(stock: &Stock) -> (Box, (Label, Label, Label)) {
         .spacing(8)
         .build();
 
-    let title = create_stock_page_header_title(stock);
+    let title = create_stock_page_header_title(long_name);
     header.append(&title);
 
-    let (price, change) = create_stock_page_header_price(stock);
+    let (price, change) =
+        create_stock_page_header_price(quote_close, regular_market_price, currency);
     header.append(&price);
 
-    let (metadata, (high, low)) = create_stock_page_header_metadata(stock);
+    let (metadata, high, low) =
+        create_stock_page_header_metadata(quote_close, regular_market_volume);
     header.append(&metadata);
 
-    (header, (change, high, low))
+    (header, change, high, low)
 }
 
 fn create_stock_page_chart_infobox() -> (Bin, Label, Label, Label) {
@@ -569,13 +589,11 @@ fn create_stock_page_chart_infobox() -> (Bin, Label, Label, Label) {
 }
 
 fn create_stock_page_chart(
-    state: &Rc<RefCell<Stock>>,
+    state: &Rc<RefCell<State>>,
     change: &Label,
     high: &Label,
 ) -> (Overlay, DrawingArea) {
-    let cursor = Rc::new(RefCell::new(None));
     let time_zone = TimeZone::system();
-
     let overlay = Overlay::new();
 
     let chart = DrawingArea::builder().vexpand(true).hexpand(true).build();
@@ -588,64 +606,60 @@ fn create_stock_page_chart(
     chart.add_controller(motion.clone());
 
     let chart_value = chart.clone();
-    let cursor_value = cursor.clone();
     let state_value = state.clone();
     let infobox_value = infobox.clone();
     let infobox_quote_value = infobox_quote.clone();
     let infobox_change_value = infobox_change.clone();
     let infobox_time_value = infobox_time.clone();
+    let time_zone_value = time_zone.clone();
     motion.connect_motion(move |_, x, y| {
-        let quote_close = &state_value.borrow().quote_close;
-        let timestamps = &state_value.borrow().timestamp;
-        if !quote_close.is_empty() {
-            let width = chart_value.width() as f64;
-            let amount = (quote_close.len() - 1) as f64;
-            let i = (x / width * amount).round().min(amount) as usize;
+        let Some(stock) = state_value.borrow().stock.clone() else {
+            return;
+        };
 
-            let quote_start = quote_close[0];
-            let quote = quote_close[i];
-            let change = quote / quote_start - 1.0;
-
-            let time = timestamps[i];
-
-            let color = if change < 0.0 { "red" } else { "blue" };
-            infobox_change_value.set_css_classes(&[color, "heading"]);
-
-            let decimals = if quote.floor().to_string().len() < 4 {
-                2
-            } else {
-                0
-            };
-            let quote = format!("{:.decimals$}", quote);
-            infobox_quote_value.set_text(&quote);
-
-            let decimals = if (change * 100.0).floor().to_string().len() < 4 {
-                2
-            } else {
-                0
-            };
-            let change = format!("{:+.decimals$}%", change * 100.0);
-            infobox_change_value.set_text(&change);
-
-            if let Ok(time) = Timestamp::from_second(time) {
-                let time = time_zone
-                    .to_datetime(time)
-                    .strftime("%m/%d/%Y %I:%M %p")
-                    .to_string();
-                infobox_time_value.set_text(&time);
-            }
+        if stock.quote_close.is_empty() {
+            return;
         }
 
-        *cursor_value.borrow_mut() = Some((x, y));
+        let width = chart_value.width() as f64;
+        let amount = stock.quote_close.len() as f64 - 1.0;
+        let i = (x / width * amount).round().min(amount) as usize;
+
+        let change_percent = stock_quote_change_percent(&stock.quote_close, None, Some(i));
+        let quote = stock.quote_close[i];
+        let time = stock.timestamp[i];
+
+        let Ok(time) = Timestamp::from_second(time) else {
+            return;
+        };
+
+        let color = if change_percent < 0.0 { "red" } else { "blue" };
+        infobox_change_value.set_css_classes(&[color, "heading"]);
+
+        let quote_length = quote.to_string().len();
+        let decimals = if quote_length < 4 { 2 } else { 0 };
+        infobox_quote_value.set_text(&format!("{:.decimals$}", quote));
+
+        let change_percent_length = change_percent.to_string().len();
+        let decimals = if change_percent_length < 4 { 2 } else { 0 };
+        infobox_change_value.set_text(&format!("{:+.decimals$}%", change_percent));
+
+        let time = time_zone_value
+            .to_datetime(time)
+            .strftime("%m/%d/%Y %I:%M %p")
+            .to_string();
+        infobox_time_value.set_text(&time);
+
+        state_value.borrow_mut().cursor = Some((x, y));
         infobox_value.set_visible(true);
         chart_value.queue_draw();
     });
 
     let chart_value = chart.clone();
-    let cursor_value = cursor.clone();
     let infobox_value = infobox.clone();
+    let state_value = state.clone();
     motion.connect_leave(move |_| {
-        *cursor_value.borrow_mut() = None;
+        state_value.borrow_mut().cursor = None;
         infobox_value.set_visible(false);
         chart_value.queue_draw();
     });
@@ -654,17 +668,22 @@ fn create_stock_page_chart(
     let change_value = change.clone();
     let high_value = high.clone();
     chart.set_draw_func(move |_, cr, width, height| {
-        let quote_close = &state_value.borrow().quote_close;
-        let cursor = *cursor.borrow();
-        let color_blue = change_value.color();
+        let Some(stock) = state_value.borrow().stock.clone() else {
+            return;
+        };
+
+        let quote_close = stock.quote_close;
+        let cursor = state_value.borrow().cursor;
+        let color_change = change_value.color();
         let color_foreground = high_value.color();
+
         draw_chart(
             cr,
             width,
             height,
-            quote_close,
+            &quote_close,
             &cursor,
-            color_blue,
+            color_change,
             color_foreground,
         );
     });
@@ -672,11 +691,7 @@ fn create_stock_page_chart(
     (overlay, chart)
 }
 
-fn create_stock_page_ranges(
-    stock: &Stock,
-    sender: &Sender<Stock>,
-    range_default: &Rc<RefCell<Range>>,
-) -> ToggleGroup {
+fn create_stock_page_ranges(state: &Rc<RefCell<State>>, sender: &Sender<Stock>) -> ToggleGroup {
     let ranges = ToggleGroup::builder()
         .margin_start(16)
         .margin_end(16)
@@ -700,33 +715,40 @@ fn create_stock_page_ranges(
         ranges.add(toggle);
     }
 
-    ranges.set_active_name(Some(range_default.borrow().as_api_str()));
+    let range = state.borrow().range.unwrap_or_default();
+    ranges.set_active_name(Some(range.as_api_str()));
 
-    let symbol = stock.symbol.clone();
-    let range_default = range_default.clone();
-    let sender = sender.clone();
+    let state_value = state.clone();
+    let sender_value = sender.clone();
     ranges.connect_notify_local(Some("active-name"), move |toggle_group, _| {
-        let Some(range) = toggle_group
-            .active_name()
-            .and_then(|range| Range::parse(&range))
-        else {
+        let Some(range) = toggle_group.active_name().and_then(|i| Range::parse(&i)) else {
             return;
         };
 
-        *range_default.borrow_mut() = range;
+        let Some(symbol) = state_value.borrow().symbol.clone() else {
+            return;
+        };
 
-        let runtime = runtime();
-        runtime.spawn(Stock::fetch_and_send(symbol.clone(), range, sender.clone()));
+        state_value.borrow_mut().range = Some(range);
+
+        let future = Stock::fetch_and_send(symbol, range, sender_value.clone());
+        runtime().spawn(future);
     });
 
     ranges
 }
 
-fn create_stock_page(stock: Stock, range_default: &Rc<RefCell<Range>>) -> NavigationPage {
-    let (sender, mut receiver) = mpsc::channel(1);
-    let state = Rc::new(RefCell::new(stock.clone()));
+fn create_stock_page(state: &Rc<RefCell<State>>) -> NavigationPage {
+    let Some(symbol) = state.borrow().symbol.clone() else {
+        return create_placeholder_page();
+    };
 
-    let navigation_page = NavigationPage::builder().title(&stock.symbol).build();
+    let Some(stock) = state.borrow().stock.clone() else {
+        return create_placeholder_page();
+    };
+
+    let (sender, mut receiver) = mpsc::channel(1);
+    let navigation_page = NavigationPage::builder().title(symbol).build();
 
     let toolbar_view = ToolbarView::new();
     navigation_page.set_child(Some(&toolbar_view));
@@ -743,20 +765,27 @@ fn create_stock_page(stock: Stock, range_default: &Rc<RefCell<Range>>) -> Naviga
         .build();
     toolbar_view.set_content(Some(&content));
 
-    let (header, header_values) = create_stock_page_header(&stock);
+    let (header, change, high, low) = create_stock_page_header(
+        &stock.long_name,
+        &stock.currency,
+        &stock.quote_close,
+        stock.regular_market_price,
+        stock.regular_market_volume,
+    );
     content.append(&header);
 
-    let (chart, chart_area) = create_stock_page_chart(&state, &header_values.0, &header_values.1);
+    let (chart, chart_area) = create_stock_page_chart(state, &change, &high);
     content.append(&chart);
 
-    let ranges = create_stock_page_ranges(&stock, &sender, range_default);
+    let ranges = create_stock_page_ranges(state, &sender);
     content.append(&ranges);
 
-    //
+    let state_value = state.clone();
     glib::spawn_future_local(async move {
         while let Some(stock) = receiver.recv().await {
-            update_stock_page_header_left(&stock, &header_values);
-            *state.borrow_mut() = stock;
+            update_stock_page_header_left(&stock.quote_close, &change, &high, &low);
+            state_value.borrow_mut().stock = Some(stock.clone());
+            state_value.borrow_mut().symbol = Some(stock.symbol);
             chart_area.queue_draw();
         }
     });
@@ -812,24 +841,27 @@ fn draw_chart(
     cr: &Context,
     width: i32,
     height: i32,
-    quotes: &Vec<f64>,
+    quote_close: &Vec<f64>,
     cursor: &Option<(f64, f64)>,
-    blue: RGBA,
-    foreground: RGBA,
+    color_change: RGBA,
+    color_foreground: RGBA,
 ) {
-    if quotes.len() == 0 || width == 0 || height == 0 {
+    if quote_close.len() == 0 || width == 0 || height == 0 {
         return;
     }
 
     let width = width as f64;
     let height = height as f64;
-    let step = width / usize::max(quotes.len() - 1, 1) as f64;
+    let step = width / usize::max(quote_close.len() - 1, 1) as f64;
 
-    let min = quotes.iter().copied().fold(f64::INFINITY, f64::min);
-    let max = quotes.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let min = quote_close.iter().copied().fold(f64::INFINITY, f64::min);
+    let max = quote_close
+        .iter()
+        .copied()
+        .fold(f64::NEG_INFINITY, f64::max);
     let span = max - min;
 
-    let coordinates: Vec<(f64, f64)> = quotes
+    let coordinates: Vec<(f64, f64)> = quote_close
         .iter()
         .enumerate()
         .map(|(i, &value)| {
@@ -850,16 +882,16 @@ fn draw_chart(
     let gradient = LinearGradient::new(0.0, 0.0, 0.0, height);
     gradient.add_color_stop_rgba(
         0.0,
-        blue.red() as f64,
-        blue.green() as f64,
-        blue.blue() as f64,
+        color_change.red() as f64,
+        color_change.green() as f64,
+        color_change.blue() as f64,
         0.1,
     );
     gradient.add_color_stop_rgba(
         1.0,
-        blue.red() as f64,
-        blue.green() as f64,
-        blue.blue() as f64,
+        color_change.red() as f64,
+        color_change.green() as f64,
+        color_change.blue() as f64,
         0.0,
     );
     cr.set_source(gradient).unwrap();
@@ -870,9 +902,9 @@ fn draw_chart(
         cr.line_to(x, y);
     }
     cr.set_source_rgba(
-        blue.red() as f64,
-        blue.green() as f64,
-        blue.blue() as f64,
+        color_change.red() as f64,
+        color_change.green() as f64,
+        color_change.blue() as f64,
         1.0,
     );
     cr.set_line_width(2.0);
@@ -889,9 +921,9 @@ fn draw_chart(
             let y = height - (level - min) / span * height - extents.height() / 2.0;
             let text = format!("{:.decimals$}", level);
             cr.set_source_rgba(
-                foreground.red() as f64,
-                foreground.green() as f64,
-                foreground.blue() as f64,
+                color_foreground.red() as f64,
+                color_foreground.green() as f64,
+                color_foreground.blue() as f64,
                 0.5,
             );
             cr.select_font_face("Adwaita Sans", FontSlant::Normal, FontWeight::Normal);
@@ -919,9 +951,9 @@ fn draw_chart(
     cr.set_dash(&[], 0.0);
 
     cr.set_source_rgba(
-        foreground.red() as f64,
-        foreground.green() as f64,
-        foreground.blue() as f64,
+        color_foreground.red() as f64,
+        color_foreground.green() as f64,
+        color_foreground.blue() as f64,
         1.0,
     );
     cr.arc(x, y, 5.0, 0.0, 2.0 * PI);
@@ -930,6 +962,8 @@ fn draw_chart(
 
 fn build_ui(application: &Application) {
     let settings = Settings::new();
+    let (sender, mut receiver) = mpsc::channel(1);
+    let state = Rc::new(RefCell::new(State::new(&settings)));
     let application_window = ApplicationWindow::builder()
         .application(application)
         .title(APP_NAME)
@@ -940,35 +974,22 @@ fn build_ui(application: &Application) {
         .height_request(480)
         .build();
 
-    let last_stock = settings.get_last_stock();
-    let last_range = Range::parse(&settings.get_last_range()).unwrap_or_default();
-    let symbol_default = Rc::new(RefCell::new(last_stock.clone()));
-    let range_default = Rc::new(RefCell::new(last_range));
+    let state_value = state.clone();
+    let settings_value = settings.clone();
+    application_window.connect_close_request(move |application_window| {
+        let (width, height) = application_window.default_size();
+        let maximized = application_window.is_maximized();
+        let symbol = state_value.borrow().symbol.clone();
+        let range = state_value.borrow().range;
 
-    application_window.connect_close_request({
-        let settings = settings.clone();
-        let symbol_default = symbol_default.clone();
-        let range_default = range_default.clone();
+        settings_value.set_window_width(width);
+        settings_value.set_window_height(height);
+        settings_value.set_window_maximized(maximized);
+        settings_value.set_last_stock(symbol);
+        settings_value.set_last_range(range);
 
-        move |application_window| {
-            let (width, height) = application_window.default_size();
-            let maximized = application_window.is_maximized();
-            let symbol_default = symbol_default.borrow();
-            let symbol_default = symbol_default.as_str();
-            let range_default = range_default.borrow();
-            let range_default = range_default.as_api_str();
-
-            settings.set_window_width(width);
-            settings.set_window_height(height);
-            settings.set_window_maximized(maximized);
-            settings.set_last_stock(symbol_default);
-            settings.set_last_range(range_default);
-
-            Propagation::Proceed
-        }
+        Propagation::Proceed
     });
-
-    let (sender, mut receiver) = mpsc::channel(1);
 
     let split = NavigationSplitView::new();
     application_window.set_content(Some(&split));
@@ -976,36 +997,38 @@ fn build_ui(application: &Application) {
     let sidebar = ListBox::builder()
         .css_classes(["navigation-sidebar"])
         .build();
-    let sidebar_page = create_sidebar_page(&sidebar, &settings, &sender, &range_default);
+    let sidebar_page = create_sidebar_page(&sidebar, &settings, &sender, &state);
     split.set_sidebar(Some(&sidebar_page));
 
     let navigation = NavigationView::new();
     let placeholder_page = create_placeholder_page();
     navigation.push(&placeholder_page);
+
     let navigation_page = NavigationPage::new(&navigation, APP_NAME);
     split.set_content(Some(&navigation_page));
 
-    navigation.connect_popped({
-        let settings = settings.clone();
-        let sidebar = sidebar.clone();
-        let split = split.clone();
-        let symbol_default = symbol_default.clone();
-        move |navigation, _| {
-            let Some(visible_page) = navigation.visible_page() else {
-                return;
-            };
+    let state_value = state.clone();
+    let settings_value = settings.clone();
+    let sidebar_value = sidebar.clone();
+    let split_value = split.clone();
+    let placeholder_page_value = placeholder_page.clone();
+    navigation.connect_popped(move |navigation, _| {
+        let Some(visible_page) = navigation.visible_page() else {
+            return;
+        };
 
-            if visible_page == placeholder_page {
-                *symbol_default.borrow_mut() = String::new();
-                sidebar.unselect_all();
-                split.set_show_content(false);
-            } else {
-                let symbol = visible_page.title().to_string();
-                *symbol_default.borrow_mut() = symbol.clone();
-                if let Some(index) = settings.find_bookmark(&symbol) {
-                    sidebar.select_row(sidebar.row_at_index(index as i32).as_ref());
-                }
-            }
+        if visible_page == placeholder_page_value {
+            state_value.borrow_mut().symbol = None;
+            sidebar_value.unselect_all();
+            split_value.set_show_content(false);
+            return;
+        }
+
+        let symbol = visible_page.title().to_string();
+        state_value.borrow_mut().symbol = Some(symbol.clone());
+
+        if let Some(index) = settings_value.find_bookmark(&symbol) {
+            sidebar_value.select_row(sidebar_value.row_at_index(index as i32).as_ref());
         }
     });
 
@@ -1019,53 +1042,51 @@ fn build_ui(application: &Application) {
     application_window.add_breakpoint(breakpoint);
 
     let action_about = SimpleAction::new("about", None);
-    action_about.connect_activate({
-        let application_window = application_window.clone();
-        move |_, _| {
-            let about_dialog = create_about_dialog();
-            about_dialog.present(Some(&application_window));
-        }
+    let application_window_value = application_window.clone();
+    action_about.connect_activate(move |_, _| {
+        let about_dialog = create_about_dialog();
+        about_dialog.present(Some(&application_window_value));
     });
     application.add_action(&action_about);
 
     let action_add_bookmark = SimpleAction::new("add", None);
-    action_add_bookmark.connect_activate({
-        let settings = settings.clone();
-        let sidebar = sidebar.clone();
-        let application_window = application_window.clone();
-        move |_, _| {
-            let add_dialog = create_add_dialog(&settings, &sidebar);
-            add_dialog.present(Some(&application_window));
-        }
+    let settings_value = settings.clone();
+    let sidebar_value = sidebar.clone();
+    let application_window_value = application_window.clone();
+    action_add_bookmark.connect_activate(move |_, _| {
+        let add_dialog = create_add_dialog(&settings_value, &sidebar_value);
+        add_dialog.present(Some(&application_window_value));
     });
     application.add_action(&action_add_bookmark);
 
-    if !last_stock.is_empty() {
-        let runtime = runtime();
-        runtime.spawn(Stock::fetch_and_send(last_stock, last_range, sender));
+    if let Some(symbol) = settings.get_last_stock() {
+        let range = settings.get_last_range().unwrap_or_default();
+        let future = Stock::fetch_and_send(symbol, range, sender);
+        runtime().spawn(future);
     }
 
-    glib::spawn_future_local({
-        let sidebar = sidebar.clone();
-        let split = split.clone();
-        async move {
-            while let Some(stock) = receiver.recv().await {
-                let symbol = stock.symbol.clone();
-                *symbol_default.borrow_mut() = symbol.clone();
+    let state_value = state.clone();
+    let sidebar_value = sidebar.clone();
+    let split_value = split.clone();
+    let navigation_value = navigation.clone();
+    let settings_value = settings.clone();
+    glib::spawn_future_local(async move {
+        while let Some(stock) = receiver.recv().await {
+            state_value.borrow_mut().stock = Some(stock.clone());
+            state_value.borrow_mut().symbol = Some(stock.symbol.clone());
 
-                let stock_page = create_stock_page(stock, &range_default);
-                if let Some(page) = navigation.visible_page() {
-                    if page.title() == stock_page.title() {
-                        continue;
-                    }
+            let stock_page = create_stock_page(&state_value);
+            if let Some(visible_page) = navigation.visible_page() {
+                if visible_page.title() == stock_page.title() {
+                    continue;
                 }
+            }
 
-                navigation.push(&stock_page);
-                split.set_show_content(true);
+            navigation_value.push(&stock_page);
+            split_value.set_show_content(true);
 
-                if let Some(index) = settings.find_bookmark(&symbol) {
-                    sidebar.select_row(sidebar.row_at_index(index as i32).as_ref());
-                }
+            if let Some(index) = settings_value.find_bookmark(&stock.symbol) {
+                sidebar_value.select_row(sidebar_value.row_at_index(index as i32).as_ref());
             }
         }
     });

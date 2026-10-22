@@ -1,4 +1,4 @@
-use crate::APP_ID;
+use crate::{APP_ID, api::Range};
 use adw::gtk::gio::{self, prelude::*};
 
 #[derive(Clone)]
@@ -26,16 +26,16 @@ impl Settings {
             .unwrap();
     }
 
-    pub fn set_last_stock(&self, stock: &str) {
-        self.settings
-            .set_string("last-stock", stock)
-            .unwrap();
+    pub fn set_last_stock(&self, stock: Option<String>) {
+        let stock = stock.unwrap_or_default();
+        self.settings.set_string("last-stock", &stock).unwrap();
     }
 
-    pub fn set_last_range(&self, range: &str) {
-        self.settings
-            .set_string("last-range", range)
-            .unwrap();
+    pub fn set_last_range(&self, range: Option<Range>) {
+        let range = range
+            .map(|i| i.as_api_str().to_string())
+            .unwrap_or_default();
+        self.settings.set_string("last-range", &range).unwrap();
     }
 
     pub fn get_window_width(&self) -> i32 {
@@ -50,12 +50,22 @@ impl Settings {
         self.settings.boolean("window-maximized")
     }
 
-    pub fn get_last_stock(&self) -> String {
-        self.settings.string("last-stock").to_string()
+    pub fn get_last_stock(&self) -> Option<String> {
+        let stock = self.settings.string("last-stock");
+        if stock.is_empty() {
+            return None;
+        }
+
+        Some(stock.to_string())
     }
 
-    pub fn get_last_range(&self) -> String {
-        self.settings.string("last-range").to_string()
+    pub fn get_last_range(&self) -> Option<Range> {
+        let range = self.settings.string("last-range");
+        if range.is_empty() {
+            return None;
+        }
+
+        Range::parse(&range)
     }
 
     pub fn get_bookmarks(&self) -> Vec<String> {

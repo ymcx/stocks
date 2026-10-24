@@ -76,16 +76,16 @@ impl Range {
     // gazillion points and is of little benefit.
     pub fn get_interval(&self) -> Option<Interval> {
         match self {
-            Range::OneDay => Some(Interval::OneMinute), // Interval::OneMinute
-            Range::FiveDays => Some(Interval::FiveMinutes), // Interval::OneMinute
-            Range::OneMonth => Some(Interval::ThirtyMinutes), // Interval::TwoMinutes
-            Range::ThreeMonths => Some(Interval::NinetyMinutes), // Interval::OneHour
-            Range::SixMonths => Some(Interval::OneHour), // Interval::OneHour
-            Range::Ytd => Some(Interval::FourHours),    // Interval::OneHour
-            Range::OneYear => Some(Interval::FourHours), // Interval::OneHour
-            Range::TwoYears => Some(Interval::FourHours), // Interval::OneHour
-            Range::FiveYears => Some(Interval::OneDay), // Interval::OneDay
-            Range::TenYears => Some(Interval::OneDay),  // Interval::OneDay
+            Range::OneDay => Some(Interval::FiveMinutes), // Interval::OneMinute
+            Range::FiveDays => Some(Interval::ThirtyMinutes), // Interval::OneMinute
+            Range::OneMonth => Some(Interval::FourHours), // Interval::TwoMinutes
+            Range::ThreeMonths => Some(Interval::OneDay), // Interval::OneHour
+            Range::SixMonths => Some(Interval::OneDay),   // Interval::OneHour
+            Range::Ytd => Some(Interval::OneDay),         // Interval::OneHour
+            Range::OneYear => Some(Interval::OneDay),     // Interval::OneHour
+            Range::TwoYears => Some(Interval::FiveDays),  // Interval::OneHour
+            Range::FiveYears => Some(Interval::OneWeek),  // Interval::OneDay
+            Range::TenYears => Some(Interval::OneMonth),  // Interval::OneDay
             Range::Max => None,
         }
     }

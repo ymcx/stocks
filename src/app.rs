@@ -20,8 +20,14 @@ use adw::{
     },
     prelude::*,
 };
+use gtk::{Fixed, Justification, glib::ControlFlow};
 use jiff::{Timestamp, tz::TimeZone};
-use std::{cell::RefCell, f64::consts::PI, rc::Rc, sync::OnceLock};
+use std::{
+    cell::{Cell, RefCell},
+    f64::consts::PI,
+    rc::Rc,
+    sync::OnceLock,
+};
 use tokio::{
     runtime::Runtime,
     sync::mpsc::{self, Sender},
@@ -84,7 +90,7 @@ impl PriceLevels {
         let step = Self::get_quote_levels_step(step_estimate);
 
         let mut levels = Vec::new();
-        let mut i = ((min / step).ceil().max(1.0) - 1.0) * step;
+        let mut i = (min / step).floor() * step;
         loop {
             levels.push(i);
             if i >= max {
@@ -128,6 +134,160 @@ impl PriceLevels {
             }
 
             self.container.append(&label);
+        }
+    }
+}
+
+#[derive(Clone, Default)]
+struct TimeLevels {
+    container: Fixed,
+}
+
+// TODO: fix exceeds AdwApplicationWindow width: requested x px, y px available
+impl TimeLevels {
+    fn new() -> TimeLevels {
+        let container = Fixed::builder()
+            .halign(Align::Fill)
+            .can_target(false)
+            .build();
+
+        TimeLevels { container }
+    }
+
+    fn widget(&self) -> &Fixed {
+        &self.container
+    }
+
+    fn get_quote_levels_step(estimate: f64) -> i64 {
+        let second = 1;
+        let minute = 60 * second;
+        let hour = 60 * minute;
+        let day = 24 * hour;
+        let week = 7 * day;
+        let month = 30 * day;
+        let year = 365 * day;
+
+        let levels = [
+            minute,
+            2 * minute,
+            3 * minute,
+            4 * minute,
+            5 * minute,
+            6 * minute,
+            10 * minute,
+            12 * minute,
+            15 * minute,
+            20 * minute,
+            30 * minute,
+            hour,
+            2 * hour,
+            3 * hour,
+            4 * hour,
+            6 * hour,
+            8 * hour,
+            12 * hour,
+            day,
+            2 * day,
+            3 * day,
+            4 * day,
+            5 * day,
+            6 * day,
+            week,
+            2 * week,
+            month,
+            2 * month,
+            3 * month,
+            4 * month,
+            6 * month,
+            year,
+            2 * year,
+            3 * year,
+            4 * year,
+            5 * year,
+            6 * year,
+            7 * year,
+            8 * year,
+            9 * year,
+            10 * year,
+        ];
+
+        let index = levels
+            .iter()
+            .map(|&i| (i as f64 - estimate).abs())
+            .enumerate()
+            .min_by(|(_, a), (_, b)| a.total_cmp(b))
+            .map(|(i, _)| i)
+            .unwrap();
+
+        levels[index]
+    }
+
+    fn get_quote_levels(min: i64, max: i64, width: i32) -> Vec<i64> {
+        let step_estimate = 200.0 * (max - min) as f64 / width as f64;
+        let step = Self::get_quote_levels_step(step_estimate);
+
+        let mut levels = Vec::new();
+        let mut i = (min as f64 / step as f64).ceil() as i64 * step;
+        loop {
+            if i > max {
+                break;
+            }
+            levels.push(i);
+            i += step;
+        }
+
+        levels
+    }
+
+    fn update(&self, timestamps: &[i64], range: Range, width: i32) {
+        if timestamps.is_empty() || width == 0 {
+            return;
+        }
+
+        while let Some(child) = self.container.first_child() {
+            self.container.remove(&child);
+        }
+
+        let format = match range {
+            Range::OneDay => "%I:%M %p",
+            Range::FiveDays => "%m/%d %I:%M %p",
+            Range::OneMonth => "%m/%d",
+            Range::ThreeMonths => "%m/%d",
+            Range::SixMonths => "%m/%d",
+            Range::Ytd => "%m/%d",
+            Range::OneYear => "%m/%d",
+            Range::TwoYears => "%m/%d/%y",
+            Range::FiveYears => "%m/%d/%y",
+            Range::TenYears => "%m/%d/%y",
+            Range::Max => "%m/%d/%y",
+        };
+
+        let time_zone = TimeZone::system();
+        let min = *timestamps.first().unwrap();
+        let max = *timestamps.last().unwrap();
+        let levels = Self::get_quote_levels(min, max, width);
+        for level in levels {
+            let timestamp = Timestamp::from_second(level).unwrap();
+            let time = time_zone
+                .to_datetime(timestamp)
+                .strftime(format)
+                .to_string();
+            let label = Label::builder()
+                .can_target(false)
+                .justify(Justification::Center)
+                .css_classes(["dimmed", "numeric"])
+                .label(time)
+                .build();
+
+            let span = (max - min) as f64;
+            let (_, w, _, _) = label.measure(Orientation::Horizontal, -1);
+            let w = w as f64;
+            let width = width as f64;
+            let x = width * (level - min) as f64 / span - w / 2.0;
+
+            if x >= 0.0 && x + w <= width {
+                self.container.put(&label, x, 0.0);
+            }
         }
     }
 }
@@ -697,25 +857,24 @@ fn create_stock_page_chart(
     state: &Rc<RefCell<State>>,
     change: &Label,
     high: &Label,
-) -> (Overlay, DrawingArea, PriceLevels) {
+) -> (Box, DrawingArea, PriceLevels, TimeLevels) {
     let time_zone = TimeZone::system();
+    let container = Box::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(8)
+        .build();
+
     let overlay = Overlay::new();
+    container.append(&overlay);
+
+    let time_levels = TimeLevels::new();
+    container.append(time_levels.widget());
 
     let chart = DrawingArea::builder().vexpand(true).hexpand(true).build();
     overlay.set_child(Some(&chart));
 
     let price_levels = PriceLevels::new(5);
     overlay.add_overlay(price_levels.widget());
-
-    let price_levels_value = price_levels.clone();
-    let state_value = state.clone();
-    chart.connect_resize(move |_, _, _| {
-        let Some(stock) = state_value.borrow().stock.clone() else {
-            return;
-        };
-
-        price_levels_value.update(&stock.quote_close);
-    });
 
     let (infobox, infobox_time, infobox_quote, infobox_change) = create_stock_page_chart_infobox();
     overlay.add_overlay(&infobox);
@@ -806,7 +965,39 @@ fn create_stock_page_chart(
         );
     });
 
-    (overlay, chart, price_levels)
+    let state_value = state.clone();
+    let time_levels_value = time_levels.clone();
+    chart.connect_resize(move |_, width, _| {
+        let Some(stock) = state_value.borrow().stock.clone() else {
+            return;
+        };
+
+        time_levels_value.update(&stock.timestamp, stock.range, width);
+    });
+
+    let time_levels_value = time_levels.clone();
+    let price_levels_value = price_levels.clone();
+    let state_value = state.clone();
+    let done = Rc::new(Cell::new(false));
+    chart.add_tick_callback(move |chart, _| {
+        if done.get() {
+            return ControlFlow::Break;
+        }
+
+        if chart.width() != 0
+            && let Some(stock) = state_value.borrow().stock.clone()
+        {
+            time_levels_value.update(&stock.timestamp, stock.range, chart.width());
+            price_levels_value.update(&stock.quote_close);
+            done.set(true);
+
+            return ControlFlow::Break;
+        }
+
+        ControlFlow::Continue
+    });
+
+    (container, chart, price_levels, time_levels)
 }
 
 fn create_stock_page_ranges(state: &Rc<RefCell<State>>, sender: &Sender<Stock>) -> ToggleGroup {
@@ -892,20 +1083,33 @@ fn create_stock_page(state: &Rc<RefCell<State>>) -> NavigationPage {
     );
     content.append(&header);
 
-    let (chart, chart_area, price_levels) = create_stock_page_chart(state, &change, &high);
+    let (chart, chart_area, price_levels, time_levels) =
+        create_stock_page_chart(state, &change, &high);
     content.append(&chart);
 
     let ranges = create_stock_page_ranges(state, &sender);
     content.append(&ranges);
 
     let state_value = state.clone();
+    let chart_area_value = chart_area.clone();
+    let change_value = change.clone();
+    let high_value = high.clone();
+    let low_value = low.clone();
+    let price_levels_value = price_levels.clone();
+    let time_levels_value = time_levels.clone();
     glib::spawn_future_local(async move {
         while let Some(stock) = receiver.recv().await {
-            update_stock_page_header_left(&stock.quote_close, &change, &high, &low);
-            price_levels.update(&stock.quote_close);
+            update_stock_page_header_left(
+                &stock.quote_close,
+                &change_value,
+                &high_value,
+                &low_value,
+            );
+            price_levels_value.update(&stock.quote_close);
+            time_levels_value.update(&stock.timestamp, stock.range, chart_area_value.width());
             state_value.borrow_mut().stock = Some(stock.clone());
             state_value.borrow_mut().symbol = Some(stock.symbol);
-            chart_area.queue_draw();
+            chart_area_value.queue_draw();
         }
     });
 
@@ -989,7 +1193,6 @@ fn draw_chart(
     cr.set_line_width(2.0);
     cr.stroke().unwrap();
 
-    // TODO: add x labels
     if let Some((x, _)) = cursor {
         let amount = (coordinates.len() - 1) as f64;
         let index = (x / width * amount).round().min(amount) as usize;

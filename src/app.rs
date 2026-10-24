@@ -12,7 +12,7 @@ use adw::{
         Align, Box, Button, DragSource, DrawingArea, DropTarget, EventControllerMotion,
         GestureClick, Label, License, ListBox, ListBoxRow, MenuButton, Orientation, Overlay,
         PopoverMenu, ScrolledWindow, WidgetPaintable,
-        cairo::{Context, FontSlant, FontWeight, LinearGradient},
+        cairo::{Context, LinearGradient},
         gdk::{ContentProvider, DragAction, RGBA, Rectangle},
         gio::{Menu, SimpleAction, SimpleActionGroup},
         glib::{self, ExitCode, Propagation},
@@ -26,6 +26,111 @@ use tokio::{
     runtime::Runtime,
     sync::mpsc::{self, Sender},
 };
+
+#[derive(Clone, Default)]
+struct PriceLevels {
+    container: Box,
+    ideal_amount: usize,
+}
+
+impl PriceLevels {
+    fn new(ideal_amount: usize) -> PriceLevels {
+        let container = Box::builder()
+            .orientation(Orientation::Vertical)
+            .can_target(false)
+            .halign(Align::End)
+            .valign(Align::Fill)
+            .build();
+
+        PriceLevels {
+            container,
+            ideal_amount,
+        }
+    }
+
+    fn widget(&self) -> &Box {
+        &self.container
+    }
+
+    fn get_quote_levels_step(estimate: f64) -> f64 {
+        let magnitude = f64::powf(10.0, estimate.log10().floor());
+        let normalized = estimate / magnitude;
+        let step = if normalized < 1.5 {
+            1.0
+        } else if normalized < 3.0 {
+            2.0
+        } else if normalized < 7.0 {
+            5.0
+        } else {
+            10.0
+        };
+
+        step * magnitude
+    }
+
+    fn get_decimals_for_step(step: f64) -> usize {
+        let mut i = step;
+        let mut decimals = 0;
+        while i != i.round() {
+            i *= 10.0;
+            decimals += 1;
+        }
+
+        decimals
+    }
+
+    fn get_quote_levels(min: f64, max: f64, ideal_amount: usize) -> (Vec<f64>, usize) {
+        let step_estimate = (max - min) / ideal_amount as f64;
+        let step = Self::get_quote_levels_step(step_estimate);
+
+        let mut levels = Vec::new();
+        let mut i = ((min / step).ceil().max(1.0) - 1.0) * step;
+        loop {
+            levels.push(i);
+            if i >= max {
+                break;
+            }
+            i += step;
+        }
+
+        let decimals = Self::get_decimals_for_step(step);
+
+        (levels, decimals)
+    }
+
+    fn update(&self, quote_close: &[f64]) {
+        if quote_close.is_empty() {
+            return;
+        }
+
+        while let Some(child) = self.container.first_child() {
+            self.container.remove(&child);
+        }
+
+        let min = stock_quote_low(quote_close);
+        let max = stock_quote_high(quote_close);
+        let (levels, decimals) = Self::get_quote_levels(min, max, self.ideal_amount);
+
+        for (i, level) in levels.iter().rev().enumerate() {
+            let label = Label::builder()
+                .can_target(false)
+                .css_classes(["dimmed", "numeric"])
+                .label(format!("{:.decimals$}", level))
+                .build();
+
+            let spacer = Box::builder()
+                .orientation(Orientation::Vertical)
+                .vexpand(true)
+                .build();
+
+            if i != 0 {
+                self.container.append(&spacer);
+            }
+
+            self.container.append(&label);
+        }
+    }
+}
 
 #[derive(Clone, Default)]
 struct State {
@@ -592,12 +697,25 @@ fn create_stock_page_chart(
     state: &Rc<RefCell<State>>,
     change: &Label,
     high: &Label,
-) -> (Overlay, DrawingArea) {
+) -> (Overlay, DrawingArea, PriceLevels) {
     let time_zone = TimeZone::system();
     let overlay = Overlay::new();
 
     let chart = DrawingArea::builder().vexpand(true).hexpand(true).build();
     overlay.set_child(Some(&chart));
+
+    let price_levels = PriceLevels::new(5);
+    overlay.add_overlay(price_levels.widget());
+
+    let price_levels_value = price_levels.clone();
+    let state_value = state.clone();
+    chart.connect_resize(move |_, _, _| {
+        let Some(stock) = state_value.borrow().stock.clone() else {
+            return;
+        };
+
+        price_levels_value.update(&stock.quote_close);
+    });
 
     let (infobox, infobox_time, infobox_quote, infobox_change) = create_stock_page_chart_infobox();
     overlay.add_overlay(&infobox);
@@ -688,7 +806,7 @@ fn create_stock_page_chart(
         );
     });
 
-    (overlay, chart)
+    (overlay, chart, price_levels)
 }
 
 fn create_stock_page_ranges(state: &Rc<RefCell<State>>, sender: &Sender<Stock>) -> ToggleGroup {
@@ -774,7 +892,7 @@ fn create_stock_page(state: &Rc<RefCell<State>>) -> NavigationPage {
     );
     content.append(&header);
 
-    let (chart, chart_area) = create_stock_page_chart(state, &change, &high);
+    let (chart, chart_area, price_levels) = create_stock_page_chart(state, &change, &high);
     content.append(&chart);
 
     let ranges = create_stock_page_ranges(state, &sender);
@@ -784,6 +902,7 @@ fn create_stock_page(state: &Rc<RefCell<State>>) -> NavigationPage {
     glib::spawn_future_local(async move {
         while let Some(stock) = receiver.recv().await {
             update_stock_page_header_left(&stock.quote_close, &change, &high, &low);
+            price_levels.update(&stock.quote_close);
             state_value.borrow_mut().stock = Some(stock.clone());
             state_value.borrow_mut().symbol = Some(stock.symbol);
             chart_area.queue_draw();
@@ -791,50 +910,6 @@ fn create_stock_page(state: &Rc<RefCell<State>>) -> NavigationPage {
     });
 
     navigation_page
-}
-
-fn get_quote_levels_step(estimate: f64) -> f64 {
-    let magnitude = 10f64.powf(estimate.log10().floor());
-    let normalized = estimate / magnitude;
-    let step = if normalized < 1.5 {
-        1.0
-    } else if normalized < 3.0 {
-        2.0
-    } else if normalized < 7.0 {
-        5.0
-    } else {
-        10.0
-    };
-
-    step * magnitude
-}
-
-fn get_decimals_for_step(step: f64) -> usize {
-    let mut i = step;
-    let mut decimals = 0;
-    while i != i.round() {
-        i *= 10.0;
-        decimals += 1;
-    }
-
-    decimals
-}
-
-fn get_quote_levels(min: f64, max: f64, height: f64) -> (Vec<f64>, usize) {
-    let ideal_amount = height / 100.0;
-    let step_estimate = (max - min) / ideal_amount;
-    let step = get_quote_levels_step(step_estimate);
-
-    let mut levels = Vec::new();
-    let mut i = (min / step).ceil() * step;
-    while i <= max {
-        levels.push(i);
-        i += step;
-    }
-
-    let decimals = get_decimals_for_step(step);
-
-    (levels, decimals)
 }
 
 fn draw_chart(
@@ -850,28 +925,32 @@ fn draw_chart(
         return;
     }
 
+    let min_quote = stock_quote_low(quote_close);
+    let max_quote = stock_quote_high(quote_close);
+    let (levels, _) = PriceLevels::get_quote_levels(min_quote, max_quote, 5);
+    if levels.is_empty() {
+        return;
+    }
+
+    let min_level = levels.first().unwrap();
+    let max_level = levels.last().unwrap();
+    let span = max_level - min_level;
+
     let width = width as f64;
     let height = height as f64;
     let step = width / usize::max(quote_close.len() - 1, 1) as f64;
-
-    let min = quote_close.iter().copied().fold(f64::INFINITY, f64::min);
-    let max = quote_close
-        .iter()
-        .copied()
-        .fold(f64::NEG_INFINITY, f64::max);
-    let span = max - min;
 
     let coordinates: Vec<(f64, f64)> = quote_close
         .iter()
         .enumerate()
         .map(|(i, &value)| {
             let x = step * i as f64;
-            let y = height - (value - min) / span * height;
+            let y = (1.0 - (value - min_level) / span) * height;
             (x, y)
         })
         .collect();
-    let first = coordinates[0];
-    let last = coordinates[coordinates.len() - 1];
+    let first = coordinates.first().unwrap();
+    let last = coordinates.last().unwrap();
 
     cr.move_to(first.0, height);
     for &(x, y) in &coordinates {
@@ -911,53 +990,35 @@ fn draw_chart(
     cr.stroke().unwrap();
 
     // TODO: add x labels
-    // TODO: fix the right margin of y labels
-    let (levels, decimals) = get_quote_levels(min, max, height);
-    if !levels.is_empty() {
-        let text = format!("{:.decimals$}", levels[levels.len() - 1]);
-        let extents = cr.text_extents(&text).unwrap();
-        for level in levels {
-            let x = width - 24.0 - extents.width();
-            let y = height - (level - min) / span * height - extents.height() / 2.0;
-            let text = format!("{:.decimals$}", level);
-            cr.set_source_rgba(
-                color_foreground.red() as f64,
-                color_foreground.green() as f64,
-                color_foreground.blue() as f64,
-                0.5,
-            );
-            cr.select_font_face("Adwaita Sans", FontSlant::Normal, FontWeight::Normal);
-            cr.set_font_size(16.0);
-            cr.move_to(x, y);
-            cr.show_text(&text).unwrap();
-        }
+    if let Some((x, _)) = cursor {
+        let amount = (coordinates.len() - 1) as f64;
+        let index = (x / width * amount).round().min(amount) as usize;
+        let (x, y) = coordinates[index];
+
+        cr.set_source_rgba(
+            color_foreground.red() as f64,
+            color_foreground.green() as f64,
+            color_foreground.blue() as f64,
+            0.5,
+        );
+        cr.set_line_width(1.0);
+        cr.set_dash(&[4.0, 4.0], 0.0);
+        cr.move_to(x, 0.0);
+        cr.line_to(x, height);
+        cr.move_to(0.0, y);
+        cr.line_to(width, y);
+        cr.stroke().unwrap();
+        cr.set_dash(&[], 0.0);
+
+        cr.set_source_rgba(
+            color_foreground.red() as f64,
+            color_foreground.green() as f64,
+            color_foreground.blue() as f64,
+            1.0,
+        );
+        cr.arc(x, y, 5.0, 0.0, 2.0 * PI);
+        cr.fill().unwrap();
     }
-
-    let &Some((x, _)) = cursor else {
-        return;
-    };
-
-    let amount = (coordinates.len() - 1) as f64;
-    let index = (x / width * amount).round().min(amount) as usize;
-    let (x, y) = coordinates[index];
-
-    cr.set_line_width(1.0);
-    cr.set_dash(&[4.0, 4.0], 0.0);
-    cr.move_to(x, 0.0);
-    cr.line_to(x, height);
-    cr.move_to(0.0, y);
-    cr.line_to(width, y);
-    cr.stroke().unwrap();
-    cr.set_dash(&[], 0.0);
-
-    cr.set_source_rgba(
-        color_foreground.red() as f64,
-        color_foreground.green() as f64,
-        color_foreground.blue() as f64,
-        1.0,
-    );
-    cr.arc(x, y, 5.0, 0.0, 2.0 * PI);
-    cr.fill().unwrap();
 }
 
 fn build_ui(application: &Application) {

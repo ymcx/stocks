@@ -140,21 +140,24 @@ impl PriceLevels {
 
 #[derive(Clone, Default)]
 struct TimeLevels {
-    container: Fixed,
+    container: Overlay,
+    fixed: Fixed,
 }
 
-// TODO: fix exceeds AdwApplicationWindow width: requested x px, y px available
 impl TimeLevels {
     fn new() -> TimeLevels {
-        let container = Fixed::builder()
+        let fixed = Fixed::builder()
             .halign(Align::Fill)
             .can_target(false)
             .build();
 
-        TimeLevels { container }
+        let container = Overlay::builder().can_target(false).build();
+        container.add_overlay(&fixed);
+
+        TimeLevels { container, fixed }
     }
 
-    fn widget(&self) -> &Fixed {
+    fn widget(&self) -> &Overlay {
         &self.container
     }
 
@@ -244,8 +247,8 @@ impl TimeLevels {
             return;
         }
 
-        while let Some(child) = self.container.first_child() {
-            self.container.remove(&child);
+        while let Some(child) = self.fixed.first_child() {
+            self.fixed.remove(&child);
         }
 
         let format = match range {
@@ -262,6 +265,7 @@ impl TimeLevels {
             Range::Max => "%m/%d/%y",
         };
 
+        let mut height = 0;
         let time_zone = TimeZone::system();
         let min = *timestamps.first().unwrap();
         let max = *timestamps.last().unwrap();
@@ -281,14 +285,18 @@ impl TimeLevels {
 
             let span = (max - min) as f64;
             let (_, w, _, _) = label.measure(Orientation::Horizontal, -1);
+            let (_, h, _, _) = label.measure(Orientation::Vertical, -1);
             let w = w as f64;
             let width = width as f64;
             let x = width * (level - min) as f64 / span - w / 2.0;
+            height = height.max(h);
 
             if x >= 0.0 && x + w <= width {
-                self.container.put(&label, x, 0.0);
+                self.fixed.put(&label, x, 0.0);
             }
         }
+
+        self.container.set_height_request(height);
     }
 }
 
